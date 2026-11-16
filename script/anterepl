@@ -1,0 +1,42 @@
+#!/usr/bin/env perl
+use 5.016;
+use strict;
+use warnings;
+use App::AnteREPL ();
+
+my $status = eval { App::AnteREPL::main(@ARGV) };
+if ($@) { print STDERR $@; exit 1; }
+exit $status;
+
+__END__
+
+=head1 NAME
+
+anterepl - edit and run Perl in a scrolling BASIC-style screen
+
+=head1 SYNOPSIS
+
+    anterepl
+    anterepl program.pl
+    anterepl --plain program.bperl
+    anterepl --help
+
+=head1 DESCRIPTION
+
+Starts L<App::AnteREPL>. Type HELP for commands. LOAD reads ordinary Perl or
+numbered programs; AUTO stores unnumbered input with an increment of 5.
+AUTO OFF or Ctrl-C returns to immediate mode. EDIT opens the in-memory
+program in your local editor, and EDIT ENV edits the current environment.
+
+See L<App::AnteREPL> for the full command reference and screen controls.
+
+=head1 AUTHOR
+
+Brett Estrade
+
+=head1 LICENSE
+
+This software is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
