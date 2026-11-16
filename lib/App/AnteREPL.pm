@@ -672,6 +672,7 @@ ENTERING AND RUNNING PERL
   : exact source        In AUTO, store a literal line without continuation.
   RUN                   Execute the whole stored program in numerical order.
   EVAL code             Uppercase only: execute Perl, including during AUTO.
+                        EVAL leaves AUTO on. AUTO OFF resumes ordinary input.
                         EVAL do { ... } groups multiline code without storing.
                         Lowercase eval keeps Perl's normal eval semantics.
   STORE [start [step]]  Copy the last successful EVAL source into the program;
@@ -1566,12 +1567,19 @@ Immediate input and RUN share live package functions and variables. Their
 source is separate: SAVE writes only the numbered program. To try a function
 and then keep its definition without retyping it:
 
+    AUTO OFF
     EVAL sub triple {
         return 3 * shift;
     }
     say triple(14)
     STORE
     SAVE functions.pl
+
+Press ordinary Enter after the closing brace. A successful function definition
+prints nothing; the next blank row accepts a new entry. EVAL does not turn AUTO
+off, so the example explicitly leaves AUTO first. Otherwise the subsequent
+C<say triple(14)> is stored quietly. STATUS reports AUTO's next number and
+whether the completed EVAL source is available for STORE.
 
 The call prints 42. STORE copies the original source of the most recent
 successful uppercase EVAL into the program, without its EVAL prefix and

@@ -82,6 +82,36 @@ $repl->dispatch($again);
 is $repl->evaluate('$FOO->{bar}', 0), 3, 'resubmission evaluates the whole earlier entry';
 
 my $paste = TestScreen->new;
+{
+    my $typed = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $typed->{repl} = $r;
+    my $entry = $typed->feed(typing('EVAL sub triple {'), 'ENTER',
+        typing('    return 3 * shift;'), 'ENTER', typing('}'), 'ENTER');
+    is $entry, "EVAL sub triple {\n    return 3 * shift;\n}",
+        'ordinary Enter on a closing subroutine brace completes the typed EVAL';
+    is capture { $r->dispatch($entry) }, '', 'successful subroutine definition is silent';
+    my $call = $typed->feed(typing('say triple(14)'), 'ENTER');
+    is $call, 'say triple(14)', 'next typed command is outside the EVAL group';
+    is capture { $r->dispatch($call) }, "42\n", 'the typed subroutine is callable immediately';
+    my $store = $typed->feed(typing('STORE'), 'ENTER');
+    like capture { $r->dispatch($store) }, qr/Stored 3 lines at 5-15/,
+        'STORE is dispatched separately after the typed definition';
+    is $r->source, "sub triple {\n    return 3 * shift;\n}\n",
+        'stored definition excludes subsequent immediate commands';
+
+    capture { $r->dispatch('AUTO') };
+    $entry = $typed->feed(typing('EVAL sub from_auto {'), 'ENTER',
+        typing('    return 7 * shift;'), 'ENTER', typing('}'), 'ENTER');
+    capture { $r->dispatch($entry) };
+    ok $r->{auto}, 'closing EVAL does not leave AUTO';
+    $call = $typed->feed(typing('say from_auto(6)'), 'ENTER');
+    is capture { $r->dispatch($call) }, '', 'ordinary call after EVAL is stored quietly during AUTO';
+    is $r->listing('20'), "20 say from_auto(6);\n", 'quiet input was stored outside the completed EVAL block';
+    capture { $r->dispatch($typed->feed(typing('AUTO OFF'), 'ENTER')) };
+    is capture { $r->dispatch($typed->feed(typing('say from_auto(6)'), 'ENTER')) }, "42\n",
+        'AUTO OFF makes the same function call execute immediately';
+}
 my $pasted = $paste->feed(['PASTE', "\$FOO = {\nbar => 8,\n};"], 'ENTER');
 is $pasted, "\$FOO = {\nbar => 8,\n};", 'multiline paste waits for Enter and remains a single entry';
 my $editing = TestScreen->new;

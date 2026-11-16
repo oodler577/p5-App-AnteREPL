@@ -21,3 +21,5 @@
        into the current screen entry without submitting it
      - added STORE to copy successful EVAL source into the numbered program
        without re-execution, for saving live function definitions as source
+     - clarified that EVAL leaves AUTO active and function definitions are
+       silent; tested the exact typed multiline function/STORE/SAVE workflow
