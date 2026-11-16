@@ -37,15 +37,18 @@ MANIFEST, terminal recordings, environment snapshots, or standalone copies.
 They are not source dependencies. The repo-only terminal test tool
 is intentionally absent from the CPAN release.
 
-Optional Unix integration checks use Python's standard library and a real vi:
+Optional Unix integration checks use Perl, IO::Pty, and a real vi:
 
 ```sh
-python3 tools/terminal-smoke.py
+cpanm IO::Tty
+perl tools/terminal-smoke.pl
 ```
 
 The test covers editable LIST output, AUTO cancellation, actual program and
 environment editor round trips, subprocess environment propagation, terminal
 interrupts, and mode restoration. Native Windows still needs its own test run.
+IO::Pty is only needed for this optional developer test, not by the app or its
+ordinary test suite; the terminal test is not included in the CPAN archive.
 
 When adding a command or changing a default, update built-in HELP and POD,
 then the relevant wiki workflow and command reference. Keep examples generic.

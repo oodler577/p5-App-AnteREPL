@@ -103,4 +103,40 @@ $cancel->fresh;
 my $next = $cancel->feed(typing('say 7'), 'ENTER');
 is $next, 'say 7', 'cancelled continuation cannot absorb the next entry';
 
+{
+    local %ENV = (ANTEREPL_CLS => 'retained');
+    my $r = App::AnteREPL->new;
+    $r->dispatch('10 say "retained program"');
+    $r->dispatch('$value = 42');
+    $r->{filename} = 'retained.pl';
+    capture { $r->dispatch('AUTO 15') };
+    my $s = TestScreen->new;
+    $r->{screen} = $s;
+    $s->append("old output\n" x 40);
+    $s->{left} = 10;
+    $s->{top} = 30;
+    is capture { $r->dispatch('cLs') }, '', 'CLS accepts mixed case without a message';
+    is_deeply $s->{rows}, [{text=>''}], 'CLS removes retained display rows';
+    is_deeply [@{$s}{qw(row col top left)}], [0, 0, 0, 0], 'CLS returns to top left';
+    $s->edit_key('TOP');
+    is $s->{rows}[$s->{row}]{text}, '', 'old display text cannot be revisited';
+    is capture { $r->dispatch('RUN') }, "retained program\n", 'CLS retains runnable VRAM';
+    is $r->evaluate('$value', 0), 42, 'CLS retains live Perl variables';
+    is $ENV{ANTEREPL_CLS}, 'retained', 'CLS retains environment';
+    is $r->{filename}, 'retained.pl', 'CLS retains save filename';
+    ok $r->dirty, 'CLS retains unsaved status';
+    is_deeply $r->{auto}, {next=>15, step=>5}, 'CLS retains AUTO position';
+    $r->dispatch('say "next line"');
+    is $r->{lines}{15}, 'say "next line";', 'AUTO continues after CLS';
+    $r->undo;
+    $r->undo;
+    is $r->source, '', 'CLS preserves earlier source undo without adding an edit';
+    for my $bad ('CLS extra', 'CLS!') {
+        ok !eval { $r->dispatch($bad); 1 }, "$bad is rejected";
+    }
+    ok !App::AnteREPL::needs_more('CLS {'), 'CLS errors do not start Perl continuation';
+    delete $r->{screen};
+    is capture { $r->dispatch('CLS') }, '', 'CLS emits no escapes to redirected output';
+}
+
 done_testing;

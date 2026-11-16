@@ -18,8 +18,11 @@ there!
 ```
 
 `AUTO` supplies numbers in increments of 5. `AUTO OFF` or Ctrl-C ends entry.
+Entries stay quiet by default; `LIST` shows numbers, or use `AUTO ECHO ON`.
 Outside AUTO, ordinary Perl executes immediately. `EDIT` opens the stored
 program in `$EDITOR`; `EDIT ENV` edits `%ENV` using `VAR=value` lines.
+`CLS` clears the screen while keeping the stored program ("VRAM"), live Perl
+variables, and `%ENV`. Use `LIST` to display the program again.
 
 ## Install and run
 

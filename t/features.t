@@ -54,7 +54,8 @@ is $repl->source, $before, 'malformed native input leaves program unchanged';
 
 my $auto = App::AnteREPL->new;
 like capture { $auto->dispatch('AUTO') }, qr/AUTO 5, step 5/, 'AUTO starts at 5';
-is capture { $auto->dispatch('$x = 2') }, "5 \$x = 2;\n", 'AUTO stores a statement with semicolon';
+is capture { $auto->dispatch('$x = 2') }, '', 'AUTO stores without echo by default';
+is $auto->listing('5'), "5 \$x = 2;\n", 'quiet AUTO still supplies a semicolon';
 ok !defined $auto->evaluate('$x',0), 'AUTO does not execute input';
 capture { $auto->dispatch('say $x'); $auto->dispatch('AUTO OFF'); };
 is_deeply [$auto->numbers], [5,10], 'AUTO increments by 5';
@@ -88,6 +89,36 @@ capture { $auto->dispatch('say "last"'); };
 ok !$auto->{auto}, 'AUTO stops at numeric limit';
 like fails { $auto->dispatch('AUTO 0') }, qr/Line numbers/, 'AUTO rejects zero start';
 like fails { $auto->dispatch('AUTO 1 0') }, qr/Line numbers/, 'AUTO rejects zero step';
+
+my $echo = App::AnteREPL->new;
+is capture { $echo->dispatch('AUTO ECHO ON') }, "AUTO echo on.\n", 'echo setting is explicit';
+ok !$echo->{auto}, 'echo setting does not start AUTO';
+capture { $echo->dispatch('AUTO') };
+is capture { $echo->dispatch('say 1') }, "5 say 1;\n", 'optional echo shows assigned source';
+capture { $echo->dispatch('AUTO OFF'); $echo->dispatch('AUTO') };
+is capture { $echo->dispatch("\$data = {\na => 1,\n};") }, "10 \$data = {\n15 a => 1,\n20 };\n", 'echo persists and handles complete multiline entries';
+capture { $echo->dispatch('AUTO ECHO OFF') };
+is capture { $echo->dispatch('say 2') }, '', 'echo can be disabled during AUTO';
+is $echo->listing('25'), "25 say 2;\n", 'echo toggle retains AUTO position';
+like fails { $echo->dispatch('AUTO ECHO maybe') }, qr/Usage: AUTO ECHO/, 'invalid echo setting rejected';
+
+my $immediate = App::AnteREPL->new;
+my $block = "do {\nmy \$total = 0;\nfor my \$n (1..3) { \$total += \$n; }\nif (\$total) { say \$total; }\n};";
+is capture { $immediate->dispatch($block) }, "6\n", 'multiple immediate blocks share a lexical scope';
+is $immediate->source, '', 'immediate multiline code is not stored';
+capture { $immediate->dispatch('AUTO') };
+ok $immediate->input_needs_more('EVAL do {'), 'EVAL supports continuation during AUTO';
+is capture { $immediate->dispatch("EVAL $block") }, "6\n", 'EVAL multiline code executes during AUTO';
+is_deeply $immediate->{auto}, {next=>5, step=>5}, 'EVAL does not consume AUTO numbers';
+is $immediate->source, '', 'EVAL leaves VRAM untouched';
+$immediate->dispatch('10 sub twice { return 2 * shift }');
+like fails { $immediate->dispatch('EVAL say twice(21)') }, qr/Undefined subroutine/, 'stored subroutine is not live before RUN';
+$immediate->dispatch('RUN');
+is capture { $immediate->dispatch('EVAL say twice(21)') }, "42\n", 'RUN-defined function is callable from immediate input';
+capture { $immediate->dispatch('AUTO OFF') };
+$immediate->dispatch("sub plus_one {\nreturn 1 + shift;\n}");
+is capture { $immediate->dispatch('say plus_one(41)') }, "42\n", 'immediate multiline function persists';
+is_deeply [$immediate->numbers], [10], 'immediate definition does not enter stored program';
 
 {
     local %ENV = (FIRST => 'startup', EMPTY => '');
@@ -186,6 +217,7 @@ my ($stdout, $stderr);
 waitpid $pid, 0;
 is $? >> 8, 0, 'anterepl CLI accepts AUTO multiline input';
 is $stderr, '', 'AUTO CLI has no errors';
-like $stdout, qr/5 \$FOO = \{\n10 bar => 1,\n15 };\nAUTO off.\n1\n/, 'AUTO CLI stores then runs multiline code';
+like $stdout, qr/AUTO off.\n1\n/, 'quiet AUTO CLI stores then runs multiline code';
+unlike $stdout, qr/\$FOO =|bar =>/, 'AUTO CLI does not echo stored source';
 
 done_testing;

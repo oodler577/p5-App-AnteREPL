@@ -69,6 +69,12 @@ sub list_program {
 
 sub dirty { return $_[0]->listing ne $_[0]->{saved}; }
 
+sub clear_screen {
+    my ($self) = @_;
+    if ($self->{screen}) { $self->{screen}->clear_display; }
+    elsif (-t STDOUT && ($ENV{TERM} || '') ne 'dumb') { print "\e[2J\e[H"; }
+}
+
 sub _number {
     my ($number) = @_;
     die "Line numbers must be integers from 1 to $max_line.\n"
@@ -461,7 +467,13 @@ sub environment {
 
 sub auto_mode {
     my ($self, $tail) = @_;
-    my @args = _args($tail, 0, 2, 'AUTO [start [step]] or AUTO OFF');
+    my @args = _args($tail, 0, 2, 'AUTO [start [step]], AUTO OFF, or AUTO ECHO ON|OFF');
+    if (@args && uc($args[0]) eq 'ECHO') {
+        die "Usage: AUTO ECHO ON|OFF\n" unless @args == 2 && $args[1] =~ /\A(?:ON|OFF)\z/i;
+        $self->{auto_echo} = uc($args[1]) eq 'ON' ? 1 : 0;
+        print 'AUTO echo ', ($self->{auto_echo} ? 'on' : 'off'), ".\n";
+        return;
+    }
     if (@args == 1 && uc($args[0]) eq 'OFF') {
         delete $self->{auto};
         print "AUTO off.\n";
@@ -499,7 +511,7 @@ sub auto_store {
     $next += $step while $next <= $max_line && exists $lines{$next};
     if ($next > $max_line) { delete $self->{auto}; }
     else { $self->{auto}{next} = $next; }
-    print @stored;
+    print @stored if $self->{auto_echo};
     print "AUTO off: reached maximum line number.\n" unless $self->{auto};
 }
 
@@ -577,7 +589,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -628,18 +640,23 @@ ENTERING AND RUNNING PERL
   10                    Delete line 10. Numbers range from 1 to 999999999.
   AUTO [start [step]]   Store unnumbered source; default increment is 5.
                         Default start: 5, or highest existing number plus 5.
-                        Existing numbers are skipped; assigned lines are shown.
+                        Existing numbers are skipped. Use LIST to see numbers.
+  AUTO ECHO ON|OFF      Echo numbered copies of stored entries; default OFF.
+                        This preference persists for the session; it does not
+                        start/end AUTO. Your typed text remains visible.
   AUTO OFF              End AUTO. Ctrl-C during entry also ends AUTO, keeping
                         stored lines and cancelling the unfinished entry.
   : exact source        In AUTO, store a literal line without continuation.
   RUN                   Execute the whole stored program in numerical order.
   EVAL code             Execute Perl explicitly, including during AUTO.
+                        EVAL do { ... } groups multiline code without storing.
   ? expression          Evaluate in scalar context and display the result.
   DUMP expression       Data::Dumper output: dump $FOO or dump \%ENV.
   PEEK expression       Devel::Peek internals: peek $FOO or peek $FOO, 10.
 
   Use $x = 1 or our $x for persistent values; my is local to one evaluation.
   say/print display output. RUN shares package variables with immediate input.
+  Stored subroutines become callable after RUN; LOAD/LIST do not define them.
   Open quotes, braces, brackets, or parentheses continue on the next row.
   A complete multiline AUTO entry preserves literal source: supply its final ;.
   Numbered and AUTO colon entries stay literal, one physical line at a time.
@@ -664,6 +681,9 @@ LISTING, EDITING, AND RECOVERY
   RENUM [start [step]]  Renumber; defaults are 10 and 10. REORDER is an alias.
   UNDO                  Undo a source edit (last 50), including EDIT or LOAD.
                         No rollback of executed Perl, %ENV, or file writes.
+  CLS                   Clear display and retained screen rows; keep the
+                        stored program ("VRAM"), Perl variables, %ENV, and AUTO.
+                        No output in a pipe or on a dumb terminal.
   NEW / CLEAR           Clear source and its filename; retain Perl variables.
   RESET                 Fresh Perl workspace; retain source and live %ENV.
   STATUS                Line count, save status, filename, and AUTO next/step.
@@ -778,7 +798,7 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|RESET|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/is) {
+    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/is) {
         my ($command, $force, $tail) = (uc($1), $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
@@ -820,6 +840,7 @@ sub dispatch {
                 print $self->edit ? "Program updated; lines numbered 10,20,...\n" : "Program unchanged.\n";
             }
             elsif ($command eq 'UNDO') { $self->undo; print "Program edit undone.\n"; }
+            elsif ($command eq 'CLS') { $self->clear_screen; }
             elsif ($command eq 'NEW' || $command eq 'CLEAR') { $self->clear($force); }
             elsif ($command eq 'RESET') { $self->reset_workspace; print "Perl workspace reset; program retained.\n"; }
             elsif ($command eq 'STATUS') {
@@ -995,6 +1016,14 @@ sub fresh {
     $self->{left} = 0;
 }
 
+sub clear_display {
+    my ($self) = @_;
+    $self->{rows} = [{ text => '' }];
+    @{$self}{qw(row col top left)} = (0, 0, 0, 0);
+    delete $self->{list_status};
+    $self->render;
+}
+
 sub append {
     my ($self, $text) = @_;
     $text =~ s/\r\n/\n/g;
@@ -1095,7 +1124,10 @@ sub list_rows {
 
 sub byte {
     my ($self, $timeout) = @_;
-    if ($self->{backend} eq 'readkey') {
+    # ReadKey's Unix timed read can fall through to blocking getc when a
+    # signal interrupts select. Use interruptible byte reads on Unix even
+    # when ReadKey handles terminal modes; Windows needs its keyboard API.
+    if ($self->{backend} eq 'readkey' && $^O eq 'MSWin32') {
         return Term::ReadKey::ReadKey(defined $timeout ? $timeout : 0, $self->{in});
     }
     if (defined $timeout) {
@@ -1456,7 +1488,11 @@ is stored together, preserving its literal source and requiring its own final
 semicolon. Each physical line receives a number. A multiline paste is also
 stored together; UNDO reverses the entire entry. C<: exact source> stores one
 literal line without continuation or an inserted terminator, useful for heredoc
-contents and other unusual syntax. AUTO echoes the assigned numbered lines.
+contents and other unusual syntax. AUTO does not echo a second, numbered copy
+by default; use LIST to see assigned numbers. C<AUTO ECHO ON> enables those
+copies; C<AUTO ECHO OFF> disables them. This preference lasts for the session
+and does not start or stop AUTO. Typed screen text and AUTO status/error
+messages remain visible.
 
 =head1 ENVIRONMENT
 
@@ -1596,6 +1632,32 @@ An exception does not roll back side effects. This runs ordinary Perl with
 your account's privileges; C<exit> exits the tool. UNDO affects only stored
 source, not executed Perl, shell commands, or saved files.
 
+To execute several blocks together without storing source, leave AUTO off and
+type or paste a C<do { ... }> entry, or use C<EVAL do { ... }> during AUTO:
+
+    EVAL do {
+        my $total = 0;
+        for my $n (1 .. 3) { $total += $n; }
+        if ($total > 0) { say $total; }
+    };
+
+This prints 6 and leaves the stored program unchanged. Delimiter continuation
+holds the entry until its closing brace. Bracketed paste also groups multiline
+text and waits for Enter; the enclosing block works when typing line by line.
+
+Named subroutines defined by immediate input persist in the shared workspace.
+A definition in stored source becomes callable after RUN evaluates the program:
+
+    10 sub twice { return 2 * shift }
+    RUN
+    say twice(21)
+
+This prints 42. RUN executes the whole program, including other top-level
+statements. LOAD and LIST only deal with source; they do not define functions.
+Editing or deleting source does not change an already defined function until
+it is redefined or RESET selects a fresh workspace. Use LIST or EDIT to revisit
+the stored definition, and C<EVAL say twice(21)> to call it during AUTO.
+
 =head1 FILES AND RECOVERY
 
 LOAD accepts ordinary Perl source as well as UTF-8 numbered files bearing a
@@ -1629,6 +1691,14 @@ command history. New output scrolls the view upward. Arrow keys move the cursor
 through displayed input and output, including LIST output. Edit a numbered row
 and press Enter to update the stored program. Editing screen text alone does
 not change the program or execute it.
+
+C<CLS> clears the display and all retained screen rows, returning the cursor
+to the top left. The stored program ("VRAM"), live Perl variables, C<%ENV>,
+AUTO settings, save filename, unsaved status, and source UNDO remain intact.
+C<LIST> displays the program again; C<RUN> still executes it. C<CLEAR> instead
+erases the stored program, while Ctrl-L only redraws existing screen text.
+In plain mode, CLS emits clear/home escapes only to a terminal whose TERM is
+not C<dumb>; it produces no output when redirected or piped.
 
 Typing overwrites characters by default, like a C64 screen editor; Insert
 switches between overwrite and insert. Backspace/Delete remove characters,

@@ -10,3 +10,9 @@
        VAR=value files, SAVE/LOAD/RELOAD, and startup environment RESET
      - completed built-in HELP, linked the user wiki, and added a Dist::Zilla
        configuration with an explicit list of files for the CPAN release
+     - implemented the terminal integration checks in Perl using IO::Pty
+     - added CLS to clear the display while retaining the stored program,
+       live Perl workspace, environment, AUTO settings, and source undo
+     - fixed Ctrl-C during LIST on Unix with Term::ReadKey installed
+     - made AUTO entry quiet by default, with AUTO ECHO ON/OFF control;
+       documented multiline immediate execution and shared subroutines
