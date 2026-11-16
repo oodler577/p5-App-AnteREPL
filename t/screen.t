@@ -104,6 +104,47 @@ my $next = $cancel->feed(typing('say 7'), 'ENTER');
 is $next, 'say 7', 'cancelled continuation cannot absorb the next entry';
 
 {
+    package ByteScreen;
+    our @ISA = ('App::AnteREPL::Screen');
+    sub byte { return shift @{ $_[0]{bytes} }; }
+}
+my $keyboard = ByteScreen->new;
+for my $sequence ("\e[13;2u", "\e[13;2:1u", "\e[13;2:2u", "\e[27;2;13~", "\x0e") {
+    $keyboard->{bytes} = [split //, $sequence];
+    is $keyboard->key, 'NEWLINE', 'modified Enter / Ctrl-N decodes as newline';
+}
+$keyboard->{bytes} = [split //, "\e[13;2:3u"];
+is $keyboard->key, 'IGNORE', 'Shift+Enter key release does not insert a second newline';
+$keyboard->{bytes} = ["\r"];
+is $keyboard->key, 'ENTER', 'ordinary Enter remains submit';
+$keyboard->{bytes} = ["\x04"];
+is $keyboard->key, 'ENDINPUT', 'Ctrl-D is distinct from terminal disconnect';
+$keyboard->{bytes} = [];
+is $keyboard->key, 'EOF', 'terminal disconnect remains EOF';
+
+my $split = TestScreen->new;
+my $block = $split->feed(typing('EVAL do { say 1; };'), 'HOME', ('RIGHT') x 10,
+    'NEWLINE', 'INSERT', typing('say 2; '), 'ENTER');
+is $block, "EVAL do { \nsay 2; say 1; };", 'insert newline splits a complete entry without submitting';
+is capture { $repl->dispatch($block) }, "2\n1\n", 'split entry executes together';
+my $mid = $split->feed('UP', 'HOME', 'NEWLINE', 'ENTER');
+is $mid, "EVAL do { \n\nsay 2; say 1; };", 'inserting a blank row retains the entire earlier group';
+is capture { $repl->dispatch($mid) }, "2\n1\n", 'submission from the middle evaluates the complete group';
+
+my $auto_end = TestScreen->new;
+my $auto_repl = App::AnteREPL->new;
+$auto_end->{repl} = $auto_repl;
+capture { $auto_repl->dispatch('AUTO') };
+$auto_repl->dispatch('say "kept"');
+my $stop = $auto_end->feed(typing('$unfinished = {'), 'ENTER', 'ENDINPUT');
+is $stop, 'AUTO OFF', 'Ctrl-D cancels incomplete AUTO input by ending AUTO';
+capture { $auto_repl->dispatch($stop) };
+ok !$auto_repl->{auto}, 'Ctrl-D leaves AUTO';
+is $auto_repl->source, "say \"kept\";\n", 'Ctrl-D preserves completed source and drops unfinished input';
+is $auto_end->feed(typing('say "immediate"'), 'ENTER'), 'say "immediate"', 'fresh entry after Ctrl-D does not join cancelled group';
+is $auto_end->feed('ENDINPUT'), undef, 'Ctrl-D outside AUTO retains normal exit behavior';
+
+{
     local %ENV = (ANTEREPL_CLS => 'retained');
     my $r = App::AnteREPL->new;
     $r->dispatch('10 say "retained program"');

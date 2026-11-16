@@ -17,12 +17,17 @@ hi
 there!
 ```
 
-`AUTO` supplies numbers in increments of 5. `AUTO OFF` or Ctrl-C ends entry.
+`AUTO` supplies numbers in increments of 5. `AUTO OFF`, Ctrl-C, or Ctrl-D ends entry.
 Entries stay quiet by default; `LIST` shows numbers, or use `AUTO ECHO ON`.
 Outside AUTO, ordinary Perl executes immediately. `EDIT` opens the stored
 program in `$EDITOR`; `EDIT ENV` edits `%ENV` using `VAR=value` lines.
 `CLS` clears the screen while keeping the stored program ("VRAM"), live Perl
 variables, and `%ENV`. Use `LIST` to display the program again.
+Uppercase `EVAL` executes immediately; lowercase `eval` is ordinary Perl.
+Shift+Enter (when the terminal distinguishes it) or Ctrl-N inserts a newline
+without submitting, including inside an editable multiline EVAL block.
+To keep code you tried with uppercase `EVAL`, use `STORE`. It copies that entry
+into the numbered program without executing it again; `SAVE` writes it to disk.
 
 ## Install and run
 

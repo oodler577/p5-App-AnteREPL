@@ -16,3 +16,8 @@
      - fixed Ctrl-C during LIST on Unix with Term::ReadKey installed
      - made AUTO entry quiet by default, with AUTO ECHO ON/OFF control;
        documented multiline immediate execution and shared subroutines
+     - made Ctrl-D end AUTO without exiting, restricted the EVAL command
+       to uppercase, and added Shift-Enter/Ctrl-N for inserting a newline
+       into the current screen entry without submitting it
+     - added STORE to copy successful EVAL source into the numbered program
+       without re-execution, for saving live function definitions as source

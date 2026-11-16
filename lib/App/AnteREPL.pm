@@ -486,11 +486,11 @@ sub auto_mode {
     $start += $step while $start <= $max_line && exists $self->{lines}{$start};
     die "No room for AUTO lines.\n" if $start > $max_line;
     $self->{auto} = { next => $start, step => $step };
-    print "AUTO $start, step $step. AUTO OFF or Ctrl-C ends entry.\n";
+    print "AUTO $start, step $step. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.\n";
 }
 
 sub auto_store {
-    my ($self, $source) = @_;
+    my ($self, $source, $quiet) = @_;
     die "AUTO source cannot contain NUL bytes or bare carriage returns.\n" if $source =~ /[\r\0]/;
     my $literal = $source =~ s/\A:(?:[ \t])?//;
     my @source = split /\n/, $source, -1;
@@ -511,8 +511,29 @@ sub auto_store {
     $next += $step while $next <= $max_line && exists $lines{$next};
     if ($next > $max_line) { delete $self->{auto}; }
     else { $self->{auto}{next} = $next; }
-    print @stored if $self->{auto_echo};
-    print "AUTO off: reached maximum line number.\n" unless $self->{auto};
+    print @stored if $self->{auto_echo} && !$quiet;
+    print "AUTO off: reached maximum line number.\n" unless $self->{auto} || $quiet;
+}
+
+sub store_eval {
+    my ($self, $tail) = @_;
+    my @args = _args($tail, 0, 2, 'STORE [start [step]]');
+    die "No EVAL entry to store. Use uppercase EVAL first.\n" unless defined $self->{pending_eval};
+    my @numbers = $self->numbers;
+    my %before = map { $_ => 1 } @numbers;
+    my $step = @args > 1 ? _number($args[1]) : 5;
+    my $start = @args ? _number($args[0]) : (@numbers ? $numbers[-1] + $step : $step);
+    _number($start);
+    {
+        # Reuse AUTO's atomic numbering and source rules without changing
+        # the user's entry mode, increment, or echo preference.
+        local $self->{auto} = { next => $start, step => $step };
+        $self->auto_store($self->{pending_eval}, 1);
+    }
+    my @stored = grep { !$before{$_} } $self->numbers;
+    delete $self->{pending_eval};
+    print 'Stored ', scalar(@stored), (@stored == 1 ? ' line at ' : ' lines at '),
+        (@stored == 1 ? $stored[0] : "$stored[0]-$stored[-1]"), ". Use SAVE to write them.\n";
 }
 
 sub input_needs_more {
@@ -523,6 +544,7 @@ sub input_needs_more {
 
 sub reset_workspace {
     $_[0]->{workspace} = 'App::AnteREPL::Workspace::S' . ++$next_workspace;
+    delete $_[0]->{pending_eval};
 }
 
 sub evaluate {
@@ -589,7 +611,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|STORE|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -631,7 +653,8 @@ sub _args {
 sub help {
     return <<'HELP';
 BASIC PERL V0.1 / App::AnteREPL
-Commands are case-insensitive. Quote filenames and values containing spaces.
+Commands are case-insensitive except EVAL, which must be uppercase.
+Quote filenames and values containing spaces.
 
 ENTERING AND RUNNING PERL
   Perl code             Execute immediately, unless AUTO is active.
@@ -644,12 +667,22 @@ ENTERING AND RUNNING PERL
   AUTO ECHO ON|OFF      Echo numbered copies of stored entries; default OFF.
                         This preference persists for the session; it does not
                         start/end AUTO. Your typed text remains visible.
-  AUTO OFF              End AUTO. Ctrl-C during entry also ends AUTO, keeping
-                        stored lines and cancelling the unfinished entry.
+  AUTO OFF              End AUTO. Ctrl-C/Ctrl-D during entry also end AUTO,
+                        keeping stored lines and cancelling unfinished input.
   : exact source        In AUTO, store a literal line without continuation.
   RUN                   Execute the whole stored program in numerical order.
-  EVAL code             Execute Perl explicitly, including during AUTO.
+  EVAL code             Uppercase only: execute Perl, including during AUTO.
                         EVAL do { ... } groups multiline code without storing.
+                        Lowercase eval keeps Perl's normal eval semantics.
+  STORE [start [step]]  Copy the last successful EVAL source into the program;
+                        never execute it again. Default: append, increment 5.
+                        Skip occupied numbers; one physical line per number.
+                        Single-line input gets a missing ;. Multiline input
+                        stays literal: supply its own statement terminators.
+                        STORE uses one UNDO step and leaves AUTO unchanged.
+                        Successful STORE consumes the pending entry; a new
+                        EVAL replaces it, and failed EVAL or RESET clears it.
+                        Ordinary Perl calls leave it available. SAVE persists.
   ? expression          Evaluate in scalar context and display the result.
   DUMP expression       Data::Dumper output: dump $FOO or dump \%ENV.
   PEEK expression       Devel::Peek internals: peek $FOO or peek $FOO, 10.
@@ -670,7 +703,7 @@ LISTING, EDITING, AND RECOVERY
   LIST 10-50            Inclusive range. Also LIST 10-, LIST -50, LIST10-50.
   LIST [range] SLOW     Start slow. PAUSE instead pauses after each screenful.
                         Space: pause/resume; S: speed; Enter: step one row;
-                        Q/Esc/Ctrl-C: stop. Other typing/movement ends LIST too.
+                        Q/Esc/Ctrl-C: stop. Other typing/movement ends LIST.
                         Plain/batch mode prints the whole range without pauses.
   EDIT                  Open the program in $EDITOR, then $VISUAL, then vi
                         (notepad on Windows). Editor receives no line numbers.
@@ -682,11 +715,12 @@ LISTING, EDITING, AND RECOVERY
   UNDO                  Undo a source edit (last 50), including EDIT or LOAD.
                         No rollback of executed Perl, %ENV, or file writes.
   CLS                   Clear display and retained screen rows; keep the
-                        stored program ("VRAM"), Perl variables, %ENV, and AUTO.
+                        stored program ("VRAM"), variables, %ENV, and AUTO.
                         No output in a pipe or on a dumb terminal.
   NEW / CLEAR           Clear source and its filename; retain Perl variables.
   RESET                 Fresh Perl workspace; retain source and live %ENV.
-  STATUS                Line count, save status, filename, and AUTO next/step.
+  STATUS                Line count, save status, filename, AUTO next/step,
+                        and whether EVAL source is available for STORE.
 
 FILES
   LOAD file             Read ordinary Perl or numbered BASIC PERL source.
@@ -731,17 +765,21 @@ SHELL AND EXIT
   chdir '/path'         Perl changes this session's directory; ! cd cannot.
   HELP                  Display this complete reference.
   QUIT / EXIT           Exit; refuse to discard unsaved source without !.
-                        Ctrl-D also exits if source is saved.
+                        Outside AUTO, Ctrl-D also exits if source is saved.
 
 SCREEN KEYS
   Arrows                Move through screen text, including LIST output.
   Enter                 Submit selected row or its complete multiline entry.
+  Shift-Enter / Ctrl-N   Insert newline at cursor without submitting the entry.
+                        Shift-Enter needs a distinct terminal key sequence;
+                        use Ctrl-N if it behaves like ordinary Enter.
   Insert                Toggle overwrite/insert; default is overwrite.
   Backspace / Delete    Remove characters. Tab inserts to a 4-column tab stop.
   Home / End            Start/end of row. PageUp/PageDown traverse screen rows.
   Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: oldest row.
   Ctrl-U / Ctrl-L       Clear current row / redraw screen.
   Ctrl-C                Cancel input/end AUTO, or interrupt running Perl.
+  Ctrl-D                End AUTO/cancel input; otherwise exit if source saved.
 
   No READY prompt or shell history. New output scrolls upward; 5000 rows kept
   this session. Long rows scroll sideways. Wide/combining glyphs may misalign.
@@ -798,14 +836,17 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/is) {
+    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|STORE|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
         my ($command, $force, $tail) = (uc($1), $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
         if ($command eq 'EVAL') {
+            delete $self->{pending_eval};
             die "EVAL needs Perl code.\n" unless length $tail;
             $self->evaluate($tail, 0);
+            $self->{pending_eval} = $tail;
         }
+        elsif ($command eq 'STORE') { $self->store_eval($tail); }
         elsif ($command eq 'AUTO') { $self->auto_mode($tail); }
         elsif ($command eq 'ENV') { $self->environment($tail); }
         elsif ($command eq 'EDIT' && uc($tail) eq 'ENV') { $self->environment('EDIT'); }
@@ -848,6 +889,7 @@ sub dispatch {
                 print scalar(@numbers), ' lines; ', ($self->dirty ? 'unsaved changes' : 'unchanged'),
                     '; ', (defined $self->{filename} ? $self->{filename} : 'no save filename'), ".\n";
                 print "AUTO next $self->{auto}{next}, step $self->{auto}{step}.\n" if $self->{auto};
+                print "EVAL source ready for STORE.\n" if defined $self->{pending_eval};
             }
             elsif ($command eq 'HELP') { print help(); }
             elsif ($command eq 'QUIT' || $command eq 'EXIT') {
@@ -904,6 +946,10 @@ sub main {
                 $line = <STDIN>;
                 while (defined $line && $self->input_needs_more($line)) {
                     my $next = <STDIN>;
+                    if (!defined $next && $interactive && $self->{auto}) {
+                        $line = undef;
+                        last;
+                    }
                     die "Incomplete Perl entry at end of input.\n" unless defined $next;
                     $line .= $next;
                 }
@@ -918,6 +964,11 @@ sub main {
             next;
         }
         if (!defined $line) {
+            STDIN->clearerr if $interactive;
+            if ($interactive && $self->{auto}) {
+                $self->auto_mode('OFF');
+                next;
+            }
             if ($self->dirty) {
                 print STDERR "Unsaved program. Use SAVE or QUIT! to discard it.\n";
                 if ($interactive) { next; }
@@ -1161,7 +1212,10 @@ sub key {
             '[H'=>'HOME', '[F'=>'END', 'OH'=>'HOME', 'OF'=>'END',
             '[1~'=>'HOME', '[4~'=>'END', '[7~'=>'HOME', '[8~'=>'END',
             '[2~'=>'INSERT', '[3~'=>'DELETE', '[5~'=>'PAGEUP', '[6~'=>'PAGEDOWN',
-            '[1;5H'=>'TOP', '[1;5F'=>'BOTTOM');
+            '[1;5H'=>'TOP', '[1;5F'=>'BOTTOM', '[27;2;13~'=>'NEWLINE');
+        # CSI-u Shift+Enter, including key press/repeat event forms. Ignore
+        # release events. No terminal-wide keyboard protocol is enabled here.
+        return 'NEWLINE' if $sequence =~ /\A\[13;2(?::[12])?u\z/;
         if ($sequence eq '[200~') {
             my $paste = '';
             while ($paste !~ /\e\[201~\z/) {
@@ -1178,7 +1232,8 @@ sub key {
         return $keys{$sequence} || 'IGNORE';
     }
     my %control = ("\r"=>'ENTER', "\n"=>'ENTER', "\x7f"=>'BACKSPACE', "\x08"=>'BACKSPACE',
-        "\x03"=>'CANCEL', "\x04"=>'EOF', "\x15"=>'CLEAR', "\x0c"=>'REDRAW', "\t"=>'TAB');
+        "\x03"=>'CANCEL', "\x04"=>'ENDINPUT', "\x0e"=>'NEWLINE',
+        "\x15"=>'CLEAR', "\x0c"=>'REDRAW', "\t"=>'TAB');
     return $control{$char} if exists $control{$char};
     return 'IGNORE' if ord($char) < 32;
     if (!utf8::is_utf8($char) && ord($char) >= 128) {
@@ -1228,6 +1283,7 @@ sub edit_key {
     elsif ($key eq 'BACKSPACE') { substr($row->{text}, --$self->{col}, 1, '') if $self->{col} > 0; }
     elsif ($key eq 'DELETE') { substr($row->{text}, $self->{col}, 1, '') if $self->{col} < length $row->{text}; }
     elsif ($key eq 'CLEAR') { $row->{text} = ''; delete $row->{list_width}; $self->{col} = 0; }
+    elsif ($key eq 'NEWLINE') { $self->edit_key(['PASTE', "\n"]); }
     elsif ($key eq 'TAB') { $self->edit_key(['TEXT', ' ' x (4 - $self->{col} % 4)]); }
 }
 
@@ -1270,6 +1326,13 @@ sub read_entry {
             $self->fresh;
             return $text;
         }
+        if (!ref($key) && $key eq 'ENDINPUT') {
+            if ($self->{repl} && $self->{repl}{auto}) {
+                $self->fresh;
+                return 'AUTO OFF';
+            }
+            return undef;
+        }
         if (!ref($key) && $key eq 'EOF') { return undef; }
         if (!ref($key) && $key eq 'CANCEL') { die "Interrupted.\n"; }
         $self->edit_key($key);
@@ -1289,7 +1352,7 @@ sub read_data {
             $self->append("\n");
             return "$value\n";
         }
-        return undef if !ref($key) && $key eq 'EOF';
+        return undef if !ref($key) && ($key eq 'EOF' || $key eq 'ENDINPUT');
         die "Interrupted.\n" if !ref($key) && $key eq 'CANCEL';
         if (ref $key) { $key->[1] =~ s/\n/ /g; $self->edit_key($key); }
         elsif ($key eq 'LEFT' || $key eq 'BACKSPACE') { $self->edit_key($key) if $self->{col} > $start; }
@@ -1477,8 +1540,11 @@ highest number. C<AUTO 100> chooses a start; C<AUTO 100 10> also chooses a step.
 Occupied numbers are skipped, so AUTO never silently overwrites stored lines.
 Explicitly numbered entries still edit or delete the indicated line.
 
-AUTO OFF returns to immediate execution. Ctrl-C while entering text also ends
-AUTO and discards only the unfinished entry. Blank entries do nothing. LIST,
+AUTO OFF returns to immediate execution. Ctrl-C or Ctrl-D while entering text
+also ends AUTO and discards only the unfinished entry, retaining stored source.
+Ctrl-D leaves the REPL running when AUTO is active. In plain terminal mode,
+use Ctrl-D on an empty physical input line; piped EOF still ends batch input.
+Blank entries do nothing. LIST,
 RUN, EDIT, SAVE, ENV, and other commands remain available; C<EVAL code> executes
 immediately while AUTO is active. STATUS shows the next number and step.
 
@@ -1493,6 +1559,35 @@ by default; use LIST to see assigned numbers. C<AUTO ECHO ON> enables those
 copies; C<AUTO ECHO OFF> disables them. This preference lasts for the session
 and does not start or stop AUTO. Typed screen text and AUTO status/error
 messages remain visible.
+
+=head1 TRY CODE AND KEEP ITS SOURCE
+
+Immediate input and RUN share live package functions and variables. Their
+source is separate: SAVE writes only the numbered program. To try a function
+and then keep its definition without retyping it:
+
+    EVAL sub triple {
+        return 3 * shift;
+    }
+    say triple(14)
+    STORE
+    SAVE functions.pl
+
+The call prints 42. STORE copies the original source of the most recent
+successful uppercase EVAL into the program, without its EVAL prefix and
+without executing it again. It defaults to appending in increments of 5;
+C<STORE 100 10> selects a start and step. Occupied numbers are skipped. It
+uses AUTO's source rules: single-line entries receive a missing semicolon,
+while multiline entries retain literal syntax and need their own terminators.
+Comments and indentation are preserved; function bodies are not deparsed.
+
+Ordinary Perl calls, LIST, and RUN do not replace the pending EVAL source.
+STATUS reports when an entry is available. A new uppercase EVAL replaces it;
+a failed EVAL or RESET clears it. Successful STORE consumes the pending entry
+so repeating STORE does not duplicate it. A failed STORE keeps it for retry.
+STORE is one source UNDO operation and does not change AUTO settings. Undoing
+the source edit leaves live functions intact. SAVE persists the source, not
+runtime values or dependencies on other unstored workspace definitions.
 
 =head1 ENVIRONMENT
 
@@ -1625,6 +1720,8 @@ Pragmas and lexical imports must be repeated in each evaluation that needs
 them; C<say> is enabled by default. Evaluation uses scalar context. Use
 C<? expression> for Data::Dumper output; ordinary input does not automatically
 print its return value. C<EVAL code> bypasses command and line-number parsing.
+EVAL must be uppercase; lowercase C<eval> retains Perl's string/block evaluation
+and exception-catching behavior. Other commands remain case-insensitive.
 
 RESET switches to a fresh workspace but keeps the source program. NEW/CLEAR
 clear the source but retain the workspace. RUN does not reset variables first.
@@ -1710,6 +1807,18 @@ this session, with no saved history. Long rows scroll horizontally with the
 cursor. Wide/combining Unicode glyphs can misalign the cursor; the editor assumes
 one terminal cell per character.
 
+Shift-Enter or Ctrl-N inserts a newline at the cursor without submitting,
+splitting the current row and keeping it in the same multiline group. This
+works even when the entry is already complete. Enter submits the entire group
+once its delimiters are closed, including from a row in the middle. Insert
+mode still controls whether subsequent typing inserts or overwrites text.
+
+Shift-Enter requires the terminal to report a distinct key sequence. CSI-u
+C<ESC [ 13 ; 2 u> and xterm C<ESC [ 27 ; 2 ; 13 ~> are recognized. If the
+terminal sends ordinary Enter for both keys, AnteREPL cannot distinguish them;
+use Ctrl-N or configure Shift-Enter to send one of those sequences. These
+editing keys apply to screen input, not C<--plain> or program STDIN reads.
+
 For immediate Perl, Enter continues on the next screen row while a brace,
 bracket, parenthesis, or quoted literal remains open. Once closed, Enter
 submits the whole entry. Earlier multiline entries remain grouped when edited
@@ -1751,8 +1860,8 @@ The old C<--no-readline> flag is an alias for C<--plain>.
 C<--quiet> suppresses the banner. A startup filename is loaded but never
 executed automatically. Piped input uses plain mode and supports the same
 immediate delimiter continuation. Batches return a nonzero status after command
-errors, incomplete input at EOF, or unsaved stored source at EOF. Ctrl-D in an
-interactive session refuses to discard unsaved stored source. Source files and
+errors, incomplete input at EOF, or unsaved stored source at EOF. Outside AUTO,
+Ctrl-D refuses to exit an interactive session with unsaved source. Source files and
 workspace values have the same lifetime rules in both terminal modes.
 
 =head1 SEE ALSO

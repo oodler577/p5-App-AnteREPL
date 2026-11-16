@@ -79,25 +79,27 @@ BEGIN {
 
 my $root = abs_path(File::Spec->catdir($FindBin::Bin, '..'));
 my $temporary = tempdir('anterepl-terminal-XXXXXX', TMPDIR=>1, CLEANUP=>1);
-my $pty = IO::Pty->new or die "Cannot create PTY: $!\n";
-$pty->slave->set_winsize(16, 80);
-my $pid = fork;
-die "Cannot fork: $!\n" unless defined $pid;
-if ($pid == 0) {
-    $pty->make_slave_controlling_terminal;
-    my $slave = $pty->slave;
+sub start_repl {
+    my @args = @_;
+    my $terminal = IO::Pty->new or die "Cannot create PTY: $!\n";
+    $terminal->slave->set_winsize(16, 80);
+    my $child = fork;
+    die "Cannot fork: $!\n" unless defined $child;
+    if ($child) { $terminal->close_slave; return ($terminal, $child); }
+    $terminal->make_slave_controlling_terminal;
+    my $slave = $terminal->slave;
     open STDIN, '<&', $slave or die "stdin: $!\n";
     open STDOUT, '>&', $slave or die "stdout: $!\n";
     open STDERR, '>&', $slave or die "stderr: $!\n";
-    $pty->close_slave;
-    close $pty;
+    $terminal->close_slave;
+    close $terminal;
     chdir $root or die "chdir: $!\n";
     # Test the environment editor with predictable, non-personal settings.
     %ENV = (PATH=>$ENV{PATH} || '/usr/bin:/bin', TERM=>'xterm', EDITOR=>'vi', LC_ALL=>'C');
-    exec $^X, '-Ilib', 'script/anterepl';
+    exec $^X, '-Ilib', 'script/anterepl', @args;
     die "Cannot start anterepl: $!\n";
 }
-$pty->close_slave;
+my ($pty, $pid) = start_repl();
 my $selector = IO::Select->new($pty);
 my $view = TerminalView->new(16, 80);
 my ($transcript, $eof, $reaped) = ('', 0, 0);
@@ -236,13 +238,13 @@ wait_for(sub { has_line('Program updated; lines numbered 10,20,...') }, 'vi retu
 command('RUN', 'edited');
 print "PASS: interactive shell and actual vi restore the screen and terminal modes\n";
 
-command('AUTO', 'AUTO 15, step 5. AUTO OFF or Ctrl-C ends entry.');
+command('AUTO', 'AUTO 15, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
 command('say "auto-line"', 'say "auto-line"');
 command('STATUS', 'AUTO next 20, step 5.');
 check(!has_prefix('15 say'), 'AUTO echoed a numbered copy by default');
 command('AUTO OFF', 'AUTO off.');
 command('say "immediate-again"', 'immediate-again');
-command('AUTO 25', 'AUTO 25, step 5. AUTO OFF or Ctrl-C ends entry.');
+command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
 send_text('$unfinished_auto = {' . "\r");
 wait_for(sub { has_line('$unfinished_auto = {') && $view->{col} == 0
     && ($view->lines)[$view->{row}] eq '' }, 'AUTO continuation');
@@ -270,7 +272,7 @@ command('ENV RELOAD', 'Environment loaded.');
 command('say "reloaded:$ENV{ANTEREPL_SMOKE}"', 'reloaded:after');
 print "PASS: EDIT ENV uses VAR=value; Perl and child shells see changes; RELOAD restores file\n";
 
-command('AUTO 25', 'AUTO 25, step 5. AUTO OFF or Ctrl-C ends entry.');
+command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
 send_text("CLS\r");
 wait_for(sub { !grep { length } $view->lines }, 'CLS clears the display');
 check($view->{row} == 0 && $view->{col} == 0, 'CLS cursor is not at top left');
@@ -309,8 +311,54 @@ send_text("\x03");
 wait_for(sub { index(substr($transcript, $marker), 'Interrupted.') >= 0 }, 'interrupt running Perl');
 print "PASS: Ctrl-C cancels continuation and interrupts execution\n";
 
+command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
+$marker = length $transcript;
+send_text('$unfinished_d = {' . "\r\x04");
+wait_for(sub { index(substr($transcript, $marker), 'AUTO off.') >= 0 }, 'Ctrl-D ends AUTO');
+command('say "after-control-d"', 'after-control-d');
+command('STATUS', '3 lines; unsaved changes; ' . $program . '.');
+
+send_text('EVAL do { say "split-enter"; };' . "\e[H" . ("\e[C" x 10) . "\e[13;2u");
+wait_for(sub { has_line('EVAL do {') && has_line('say "split-enter"; };') }, 'Shift-Enter splits row');
+check(!has_line('split-enter'), 'Shift-Enter submitted instead of inserting');
+send_text("\e[27;2;13~\x0e\r");
+wait_for(sub { has_line('split-enter') }, 'inserted blank rows remain executable');
+command(q{eval { die "caught" }; say $@ =~ /caught/ ? "perl-eval-ok" : "bad"}, 'perl-eval-ok');
+print "PASS: Ctrl-D leaves AUTO; Shift-Enter/Ctrl-N insert rows; lowercase eval catches exceptions\n";
+
+command('EVAL $stored_runs++; sub from_eval { return 42 }', 'EVAL $stored_runs++; sub from_eval { return 42 }');
+command('say from_eval()', '42');
+command('STORE', 'Stored 1 line at 25. Use SAVE to write them.');
+command('say "stored-runs:$stored_runs"', 'stored-runs:1');
+print "PASS: STORE keeps EVAL source without executing it again\n";
+
 check(index($transcript, 'READY>') < 0, 'legacy prompt appeared');
-send_text("QUIT!\r");
+command('NEW!', 'NEW!');
+send_text("\x04");
+finish_repl();
+print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and echo\n";
+
+($pty, $pid) = start_repl('--plain', '--quiet');
+$selector = IO::Select->new($pty);
+$view = TerminalView->new(16, 80);
+($transcript, $eof, $reaped) = ('', 0, 0);
+send_text("AUTO\nsay \"plain-stored\"\nSTATUS\n");
+wait_for(sub { index($transcript, 'AUTO next 10, step 5.') >= 0 }, 'plain AUTO stored input');
+send_text("\x04");
+wait_for(sub { index($transcript, 'AUTO off.') >= 0 }, 'plain Ctrl-D ends AUTO');
+send_text("RUN\n");
+wait_for(sub { index($transcript, "\r\nplain-stored\r\n") >= 0 }, 'plain session remains usable');
+$marker = length $transcript;
+send_text("AUTO\n\$unfinished_plain = {\n");
+wait_for(sub { index(substr($transcript, $marker), 'AUTO 10, step 5.') >= 0 }, 'plain AUTO restarted');
+send_text("\x04");
+wait_for(sub { index(substr($transcript, $marker), 'AUTO off.') >= 0 }, 'plain Ctrl-D cancels unfinished AUTO');
+send_text("say \"plain-resumed\"\nQUIT!\n");
+wait_for(sub { index($transcript, "\r\nplain-resumed\r\n") >= 0 }, 'plain input continues after cancelled block');
+finish_repl();
+print "PASS: plain-terminal Ctrl-D ends AUTO and cancels unfinished input without exiting\n";
+
+sub finish_repl {
 my $deadline = now() + 5;
 while (now() < $deadline) {
     my $finished = waitpid($pid, WNOHANG);
@@ -328,5 +376,5 @@ check($reaped, 'REPL did not exit');
 my $settings = POSIX::Termios->new;
 $settings->getattr(fileno($pty)) or die "Cannot read terminal settings: $!\n";
 check(($settings->getlflag & ICANON) && ($settings->getlflag & ECHO), 'terminal not restored');
-print "PASS: no prompt/history UI; clean exit restores canonical input and echo\n";
 close $pty;
+}

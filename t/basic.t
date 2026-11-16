@@ -264,6 +264,9 @@ is $status, 1, 'batch reports command failures';
 ($out, $err, $status) = cli("10 say 1;\n");
 like $err, qr/Unsaved/, 'EOF reports dirty batch';
 is $status, 1, 'dirty batch exits nonzero';
+($out, $err, $status) = cli("AUTO\nsay 1\n");
+like $err, qr/Unsaved/, 'batch EOF during AUTO still reports unsaved source';
+is $status, 1, 'batch EOF during AUTO exits instead of waiting for more input';
 
 my $export = "$dir/export.pl";
 my $standalone = App::AnteREPL->new;
