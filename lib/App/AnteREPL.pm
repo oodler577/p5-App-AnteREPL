@@ -752,10 +752,12 @@ SHELL AND EXIT
 SCREEN KEYS
   Arrows                Move through screen text, including LIST output.
   Enter                 Submit selected row or its complete multiline entry.
+                        Rerunning replaces its output directly below the entry;
+                        later entries remain. Cursor follows the new result.
   Shift-Enter / Ctrl-N   Insert newline at cursor without submitting the entry.
                         Shift-Enter needs a distinct terminal key sequence;
                         use Ctrl-N if it behaves like ordinary Enter.
-  Insert                Toggle overwrite/insert; default is overwrite.
+  Insert                Toggle insert/overwrite; default is insert.
   Backspace / Delete    Remove characters. Tab inserts to a 4-column tab stop.
   Home / End            Start/end of row. PageUp/PageDown traverse screen rows.
   Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: oldest row.
@@ -974,7 +976,7 @@ our $active;
 
 sub new {
     return bless { rows => [{ text => '' }], row => 0, col => 0, top => 0,
-        left => 0, width => 80, height => 24, serial => 0, insert => 0 }, $_[0];
+        left => 0, width => 80, height => 24, serial => 0, insert => 1 }, $_[0];
 }
 
 sub terminal {
@@ -1042,37 +1044,80 @@ sub leave {
 END { eval { $active->leave if $active; }; }
 
 sub fresh {
-    my ($self) = @_;
-    push @{ $self->{rows} }, { text => '' } if length $self->{rows}[-1]{text};
-    delete $self->{rows}[-1]{group};
-    $self->{row} = $#{ $self->{rows} };
+    my ($self, $bottom) = @_;
+    my $row = !$bottom && defined $self->{output_row}
+        ? $self->{output_row} : $#{ $self->{rows} };
+    if (length $self->{rows}[$row]{text}) {
+        splice @{ $self->{rows} }, ++$row, 0, { text => '' };
+    }
+    $self->{rows}[$row] = { text => '' };
+    $self->{row} = $row;
     $self->{col} = 0;
     $self->{left} = 0;
+    delete @{$self}{qw(output_row output_owner)};
+}
+
+sub start_output {
+    my ($self, $first, $last) = @_;
+    my $owner = $self->{rows}[$first]{entry_id} || ++$self->{serial};
+    for my $index ($first .. $last) {
+        $self->{rows}[$index]{entry_id} = $owner;
+        delete $self->{rows}[$index]{output_for};
+    }
+    my $row = $last + 1;
+    my $end = $row;
+    ++$end while $end < @{ $self->{rows} }
+        && ($self->{rows}[$end]{output_for} || 0) == $owner;
+    splice @{ $self->{rows} }, $row, $end - $row;
+    my $next = $self->{rows}[$row];
+    # Reuse a blank input row; preserve subsequent commands and their output.
+    unless ($next && $next->{text} eq '' && !$next->{group}
+        && !$next->{entry_id} && !$next->{output_for}) {
+        splice @{ $self->{rows} }, $row, 0, { text => '' };
+    }
+    $self->{rows}[$row]{output_for} = $owner;
+    @{$self}{qw(row col left output_row output_owner)} = ($row, 0, 0, $row, $owner);
 }
 
 sub clear_display {
     my ($self) = @_;
     $self->{rows} = [{ text => '' }];
     @{$self}{qw(row col top left)} = (0, 0, 0, 0);
-    delete $self->{list_status};
+    delete @{$self}{qw(list_status output_row output_owner)};
     $self->render;
 }
 
 sub append {
     my ($self, $text) = @_;
+    my $row = defined $self->{output_row} ? $self->{output_row} : $#{ $self->{rows} };
     $text =~ s/\r\n/\n/g;
     $text =~ s/\e\][^\a]*(?:\a|\e\\)//g;
     $text =~ s/\e\[[0-?]*[ -\/]*[\@-~]//g;
     $text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/?/g;
     for my $part (split /(\n|\r|\t)/, $text) {
-        if ($part eq "\n") { push @{ $self->{rows} }, { text => '' }; }
-        elsif ($part eq "\r") { $self->{rows}[-1]{text} = ''; }
-        elsif ($part eq "\t") { $self->{rows}[-1]{text} .= ' ' x (8 - length($self->{rows}[-1]{text}) % 8); }
-        else { $self->{rows}[-1]{text} .= $part; }
+        if ($part eq "\n") {
+            my $next = { text => '' };
+            $next->{output_for} = $self->{output_owner} if $self->{output_owner};
+            splice @{ $self->{rows} }, ++$row, 0, $next;
+        }
+        elsif ($part eq "\r") { $self->{rows}[$row]{text} = ''; }
+        elsif ($part eq "\t") { $self->{rows}[$row]{text} .= ' ' x (8 - length($self->{rows}[$row]{text}) % 8); }
+        else { $self->{rows}[$row]{text} .= $part; }
     }
-    if (@{ $self->{rows} } > 5000) { splice @{ $self->{rows} }, 0, @{ $self->{rows} } - 5000; }
-    $self->{row} = $#{ $self->{rows} };
-    $self->{col} = length $self->{rows}[-1]{text};
+    if (@{ $self->{rows} } > 5000) {
+        my $excess = @{ $self->{rows} } - 5000;
+        # Keep the most recent output row as well as the cursor when rerunning
+        # near the oldest retained rows; LIST attaches padding to that row.
+        my $keep = $row > 0 ? $row - 1 : 0;
+        my $head = $excess < $keep ? $excess : $keep;
+        splice @{ $self->{rows} }, 0, $head;
+        $row -= $head;
+        $self->{top} = $self->{top} > $head ? $self->{top} - $head : 0;
+        splice @{ $self->{rows} }, 5000 if @{ $self->{rows} } > 5000;
+    }
+    $self->{output_row} = $row if defined $self->{output_row};
+    $self->{row} = $row;
+    $self->{col} = length $self->{rows}[$row]{text};
     $self->{left} = 0;
     $self->render if $self->{entered};
 }
@@ -1114,7 +1159,7 @@ sub list_rows {
             $self->append($rows->[$index] . "\n");
             # Remember which spaces belong to LIST's number column so editing
             # and resubmitting a listed row never accumulates source indentation.
-            $self->{rows}[-2]{list_width} = $width;
+            $self->{rows}[$self->{row} - 1]{list_width} = $width;
             ++$page_count;
             next if !$controlled || $index == $#$rows;
             $paused = 1 if $mode eq 'pause' && $page_count >= $self->{height} - 1;
@@ -1237,7 +1282,8 @@ sub edit_key {
             my $before = substr($row->{text}, 0, $self->{col});
             my $after = substr($row->{text}, $self->{col});
             my @parts = split /\n/, $before . $text . $after, -1;
-            splice @{ $self->{rows} }, $self->{row}, 1, map { {text=>$_, group=>$group} } @parts;
+            my %owner = map { exists $row->{$_} ? ($_ => $row->{$_}) : () } qw(entry_id output_for);
+            splice @{ $self->{rows} }, $self->{row}, 1, map { {text=>$_, group=>$group, %owner} } @parts;
             $self->{row} += $#parts;
             $self->{col} = length($parts[-1]) - length($after);
         }
@@ -1261,7 +1307,7 @@ sub edit_key {
     elsif ($key eq 'HOME') { $self->{col} = 0; }
     elsif ($key eq 'END') { $self->{col} = length $row->{text}; }
     elsif ($key eq 'TOP') { $self->{row} = $self->{col} = 0; }
-    elsif ($key eq 'BOTTOM' || $key eq 'ESC') { $self->fresh; }
+    elsif ($key eq 'BOTTOM' || $key eq 'ESC') { $self->fresh(1); }
     elsif ($key eq 'INSERT') { $self->{insert} = !$self->{insert}; }
     elsif ($key eq 'BACKSPACE') { substr($row->{text}, --$self->{col}, 1, '') if $self->{col} > 0; }
     elsif ($key eq 'DELETE') { substr($row->{text}, $self->{col}, 1, '') if $self->{col} < length $row->{text}; }
@@ -1306,12 +1352,12 @@ sub read_entry {
                 $self->{col} = 0;
                 next;
             }
-            $self->fresh;
+            $self->start_output($first, $last);
             return $text;
         }
         if (!ref($key) && $key eq 'ENDINPUT') {
             if ($self->{repl} && $self->{repl}{auto}) {
-                $self->fresh;
+                $self->fresh(1);
                 return 'AUTO OFF';
             }
             return undef;
@@ -1324,14 +1370,15 @@ sub read_entry {
 
 sub read_data {
     my ($self) = @_;
-    $self->{row} = $#{ $self->{rows} };
-    my $start = length $self->{rows}[-1]{text};
+    my $row = defined $self->{output_row} ? $self->{output_row} : $#{ $self->{rows} };
+    $self->{row} = $row;
+    my $start = length $self->{rows}[$row]{text};
     $self->{col} = $start;
     while (1) {
         $self->render;
         my $key = $self->key;
         if (!ref($key) && $key eq 'ENTER') {
-            my $value = substr($self->{rows}[-1]{text}, $start);
+            my $value = substr($self->{rows}[$row]{text}, $start);
             $self->append("\n");
             return "$value\n";
         }
@@ -1415,13 +1462,13 @@ sub session {
             if (!$read_ok) {
                 my $error = $@;
                 $self->{out}->clearerr;
-                $self->fresh;
+                $self->fresh(1);
                 print STDERR "AUTO off.\n" if delete $repl->{auto};
                 print STDERR $error;
                 next;
             }
             if (!defined $line) {
-                if ($repl->dirty) { $self->fresh; print STDERR "Unsaved program. Use SAVE or QUIT!.\n"; next; }
+                if ($repl->dirty) { $self->fresh(1); print STDERR "Unsaved program. Use SAVE or QUIT!.\n"; next; }
                 last;
             }
             my $continue;
@@ -1798,7 +1845,13 @@ Interactive mode uses an ANSI screen with no input prompt or shell-style
 command history. New output scrolls the view upward. Arrow keys move the cursor
 through displayed input and output, including LIST output. Edit a numbered row
 and press Enter to update the stored program. Editing screen text alone does
-not change the program or execute it.
+not change the program or execute it. When you resubmit an earlier entry, its
+new output replaces its previous output immediately below the entry, and the
+cursor stays just below the new result. Shorter or silent results remove stale
+output rows. Later entries and their output remain available; Esc or Ctrl-End
+still moves to the bottom. Multiline entries put their result below the whole
+group, even when you press Enter on a row in the middle. This changes only the
+screen display: executing Perl still repeats its normal side effects.
 
 C<CLS> clears the display and all retained screen rows, returning the cursor
 to the top left. The stored program ("VRAM"), live Perl variables, C<%ENV>,
@@ -1808,8 +1861,8 @@ erases the stored program, while Ctrl-L only redraws existing screen text.
 In plain mode, CLS emits clear/home escapes only to a terminal whose TERM is
 not C<dumb>; it produces no output when redirected or piped.
 
-Typing overwrites characters by default, like a C64 screen editor; Insert
-switches between overwrite and insert. Backspace/Delete remove characters,
+Typing inserts characters by default, including when editing earlier rows;
+Insert switches between insert and overwrite. Backspace/Delete remove characters,
 Home/End move within a row, and PageUp/PageDown move through retained screen
 text. Esc or Ctrl-End returns to a blank row at the bottom; Ctrl-Home visits the
 oldest row. Ctrl-U clears a row, Ctrl-L redraws, and Ctrl-C cancels input or

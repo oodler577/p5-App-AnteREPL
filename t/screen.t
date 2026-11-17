@@ -64,10 +64,10 @@ $repl->dispatch($line);
 $screen->append($repl->listing);
 is $screen->{rows}[1]{text}, '10 say "first";', 'LIST output is part of editable screen memory';
 $line = $screen->feed('UP', 'END', ('LEFT') x 3, ['TEXT','!'], 'ENTER');
-is $line, '10 say "firs!";', 'moving up edits the actual displayed output row';
+is $line, '10 say "firs!t";', 'moving up inserts into the actual displayed output row by default';
 is capture { $repl->run }, "first\n", 'editing the screen alone does not update stored source';
 $repl->dispatch($line);
-is capture { $repl->run }, "firs!\n", 'Enter resubmission changes stored source';
+is capture { $repl->run }, "firs!t\n", 'Enter resubmission changes stored source';
 
 my $multi = TestScreen->new;
 my $definition = $multi->feed(typing('$FOO = {'), 'ENTER', typing('bar => 2,'), 'ENTER',
@@ -77,9 +77,9 @@ $repl->dispatch($definition);
 is $repl->evaluate('$FOO->{bar}', 0), 2, 'complete multiline definition evaluates';
 is $repl->evaluate('$FOO->{names}[1]', 0), 'Bob', 'nested data structure preserved';
 my $again = $multi->feed('UP', 'UP', 'UP', 'HOME', ('RIGHT') x 7, ['TEXT','3'], 'ENTER');
-like $again, qr/bar => 3,/, 'an earlier multiline entry can be edited in place';
+like $again, qr/bar => 32,/, 'an earlier multiline entry inserts text without overwriting';
 $repl->dispatch($again);
-is $repl->evaluate('$FOO->{bar}', 0), 3, 'resubmission evaluates the whole earlier entry';
+is $repl->evaluate('$FOO->{bar}', 0), 32, 'resubmission evaluates the whole earlier entry';
 
 my $paste = TestScreen->new;
 {
@@ -111,7 +111,7 @@ my $paste = TestScreen->new;
 my $pasted = $paste->feed(['PASTE', "\$FOO = {\nbar => 8,\n};"], 'ENTER');
 is $pasted, "\$FOO = {\nbar => 8,\n};", 'multiline paste waits for Enter and remains a single entry';
 my $editing = TestScreen->new;
-$editing->feed(typing('abc'), 'HOME', 'INSERT', ['TEXT','x'], 'DELETE', 'END', 'BACKSPACE', 'ENTER');
+$editing->feed(typing('abc'), 'HOME', ['TEXT','x'], 'DELETE', 'END', 'BACKSPACE', 'ENTER');
 is $editing->{rows}[0]{text}, 'xb', 'insert, delete and backspace edit displayed text';
 $editing->append("one\r\ntwo\r\n");
 is $editing->{rows}[-2]{text}, 'two', 'CRLF output remains visible';
@@ -150,7 +150,7 @@ is $keyboard->key, 'EOF', 'terminal disconnect remains EOF';
 
 my $split = TestScreen->new;
 my $block = $split->feed(typing('EVAL do { say 1; };'), 'HOME', ('RIGHT') x 10,
-    'NEWLINE', 'INSERT', typing('say 2; '), 'ENTER');
+    'NEWLINE', typing('say 2; '), 'ENTER');
 is $block, "EVAL do { \nsay 2; say 1; };", 'insert newline splits a complete entry without submitting';
 is capture { $repl->dispatch($block) }, "2\n1\n", 'split entry executes together';
 my $mid = $split->feed('UP', 'HOME', 'NEWLINE', 'ENTER');
@@ -204,6 +204,125 @@ is $auto_end->feed('ENDINPUT'), undef, 'Ctrl-D outside AUTO retains normal exit 
     ok !App::AnteREPL::needs_more('CLS {'), 'CLS errors do not start Perl continuation';
     delete $r->{screen};
     is capture { $r->dispatch('CLS') }, '', 'CLS emits no escapes to redirected output';
+}
+
+sub screen_run {
+    my ($screen, $repl, @keys) = @_;
+    $screen->{repl} = $repl;
+    my $entry = $screen->feed(@keys);
+    {
+        local *STDOUT;
+        local *STDERR;
+        local *STDIN;
+        tie *STDOUT, 'App::AnteREPL::ScreenOutput', $screen;
+        tie *STDERR, 'App::AnteREPL::ScreenOutput', $screen;
+        tie *STDIN, 'App::AnteREPL::ScreenInput', $screen;
+        eval { $repl->dispatch($entry); 1 } or print STDERR $@;
+    }
+    $screen->fresh;
+    return $entry;
+}
+sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $r->dispatch('EVAL sub triple { 3 * shift }');
+    screen_run($s, $r, typing('say triple(14)'), 'ENTER');
+    is_deeply screen_rows($s), ['say triple(14)', '42', ''], 'result sits directly below its input';
+    screen_run($s, $r, 'UP', 'UP', 'END', 'LEFT', 'BACKSPACE', 'BACKSPACE', typing('3'), 'ENTER');
+    is_deeply screen_rows($s), ['say triple(3)', '9', ''], 'editing and rerunning replaces the prior result';
+    screen_run($s, $r, 'UP', 'UP', 'ENTER') for 1 .. 3;
+    is_deeply screen_rows($s), ['say triple(3)', '9', ''], 'repeated Enter does not accumulate results or blank rows';
+    screen_run($s, $r, typing('say "later"'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'END', 'LEFT', 'BACKSPACE', typing('7'), 'ENTER');
+    is_deeply screen_rows($s), ['say triple(7)', '21', '', 'say "later"', 'later', ''],
+        'replacing an earlier result preserves subsequent input and output';
+    is_deeply [@{$s}{qw(row col)}], [2, 0], 'cursor stays immediately below the replacement result';
+    $s->edit_key('BOTTOM');
+    is $s->{row}, 5, 'Ctrl-End still reaches the bottom after an earlier resubmission';
+    is $r->source, '', 'screen replacement does not store or erase program source';
+
+    my $toggle = TestScreen->new;
+    is $toggle->feed(typing('abc'), 'HOME', 'INSERT', typing('X'), 'INSERT', typing('Y'), 'ENTER'),
+        'XYbc', 'Insert toggles overwrite on and back to insertion';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $r->dispatch('$n = 3');
+    my $code = "EVAL do {\nsay for 1 .. \$n;\n}";
+    screen_run($s, $r, ['PASTE', $code], 'ENTER');
+    screen_run($s, $r, typing('say "keep"'), 'ENTER');
+    $r->dispatch('$n = 1');
+    screen_run($s, $r, 'TOP', 'DOWN', 'ENTER');
+    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', '1', '', 'say "keep"', 'keep', ''],
+        'resubmitting from the middle of a block replaces all of its longer old output';
+    $r->dispatch('$n = 0');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', '', 'say "keep"', 'keep', ''],
+        'a silent rerun removes obsolete results without removing later entries';
+    screen_run($s, $r, 'TOP', 'END', 'NEWLINE', typing('say "added";'), 'ENTER');
+    is_deeply screen_rows($s), ['EVAL do {', 'say "added";', 'say for 1 .. $n;', '}', 'added', '', 'say "keep"', 'keep', ''],
+        'splitting a previously submitted entry retains its output association';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    my $code = q{die "failed\n" if $fail; print "prefix"; print $suffix};
+    $r->dispatch(q{$suffix = 'long'});
+    screen_run($s, $r, typing($code), 'ENTER');
+    is_deeply screen_rows($s), [$code, 'prefixlong', ''], 'partial writes share a result row without a final newline';
+    screen_run($s, $r, typing('say "keep"'), 'ENTER');
+    $r->dispatch(q{$suffix = 'x'});
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), [$code, 'prefixx', '', 'say "keep"', 'keep', ''],
+        'shorter output clears the old line suffix';
+    $r->dispatch('$fail = 1');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), [$code, 'failed', '', 'say "keep"', 'keep', ''],
+        'errors replace prior results at the same position';
+    $r->dispatch('$fail = 0');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is $s->{rows}[1]{text}, 'prefixx', 'successful rerun replaces the old error';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    my $code = q{print "Name: "; chomp($name = <STDIN>); say "Hi $name"};
+    screen_run($s, $r, typing($code), 'ENTER', typing('Alice'), 'ENTER');
+    screen_run($s, $r, typing('say "keep"'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'ENTER', typing('Bob'), 'ENTER');
+    is_deeply screen_rows($s), [$code, 'Name: Bob', 'Hi Bob', '', 'say "keep"', 'keep', ''],
+        'program STDIN and prompts stay beside a rerun entry with later rows present';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $r->{screen} = $s;
+    $r->dispatch('5     say "indented"');
+    $r->dispatch('10 say "other"');
+    screen_run($s, $r, typing('LIST'), 'ENTER');
+    screen_run($s, $r, typing('say "keep"'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), ['LIST', '5      say "indented";', '10 say "other";', '', 'say "keep"', 'keep', ''],
+        'LIST resubmission replaces its listing while retaining later entries';
+    my $source = $r->source;
+    screen_run($s, $r, 'UP', 'UP', 'ENTER');
+    is $r->source, $source, 'LIST padding metadata survives output replacement';
+    screen_run($s, $r, 'BOTTOM', typing('CLS'), 'ENTER');
+    is_deeply screen_rows($s), [''], 'CLS clears output associations as well as screen rows';
+
+    $s->append("LIST 5\n" x 4999);
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is scalar @{ $s->{rows} }, 5000, 'rerunning at the retention limit keeps a bounded screen';
+    is $s->{rows}[$s->{row} - 1]{text}, '5     say "indented";',
+        'the newest listing row remains immediately above the cursor at the retention limit';
+    ok !$s->{rows}[-1]{list_width}, 'retention trimming does not attach LIST padding to an unrelated tail row';
 }
 
 done_testing;

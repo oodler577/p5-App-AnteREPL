@@ -197,7 +197,7 @@ send_text('q');
 wait_for(sub { !has_prefix('LIST paused') }, 'LIST stop');
 command('LIST5-10', '5  say "low";');
 send_text("\e[A\e[A\e[F\e[D\e[D\e[D!\r");
-command('LIST5', '5 say "lo!";');
+command('LIST5', '5 say "lo!w";');
 send_text("LIST SLOW\r");
 wait_for(sub { has_prefix('LIST slow') }, 'LIST slow start');
 send_text("\x03");
@@ -349,6 +349,27 @@ check(has_line('twice'), 'FUNCTIONS omitted an earlier RUN-defined function');
 command('EVAL sub triple { return 4 * shift; }', 'Subroutine triple redefined at BASIC_PERL_prompt line 1.');
 command('say triple(14)', '56');
 print "PASS: FUNCTIONS lists live names and redefinition warns without confirmation\n";
+command('RESET', 'Perl workspace reset; program retained.');
+command('EVAL sub triple { 3 * shift }', 'EVAL sub triple { 3 * shift }');
+send_text("CLS\r");
+wait_for(sub { !grep { length } $view->lines }, 'clear screen for resubmission checks');
+command('say triple(14)', '42');
+send_text("\e[A\e[A\e[F\e[D\x7f\x7f3\r");
+wait_for(sub { has_line('say triple(3)') && has_line('9') && $view->{row} == 2 }, 'replace earlier result');
+check(!has_line('42'), 'old result remained on screen');
+for (1 .. 3) {
+    send_text("\e[A\e[A\r");
+    pump_for(0.1);
+    check(join('|', $view->lines) eq join('|', 'say triple(3)', '9', ('') x 14), 'repeated result accumulated rows');
+}
+command('say "later-result"', 'later-result');
+send_text("\e[1;5H\e[F\e[D\e[D1\r");
+wait_for(sub { has_line('say triple(13)') && has_line('39') && $view->{row} == 2 }, 'insert into earlier input');
+check(join('|', $view->lines) eq join('|', 'say triple(13)', '39', '', 'say "later-result"', 'later-result', ('') x 11),
+    'replacement lost later entries or left stale output');
+send_text("\e[1;5F");
+wait_for(sub { $view->{row} == 5 && $view->{col} == 0 }, 'Ctrl-End after resubmission');
+print "PASS: earlier entries use insert editing and replace results in place while retaining later commands\n";
 send_text("\x04");
 finish_repl();
 print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and echo\n";

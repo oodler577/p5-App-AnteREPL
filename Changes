@@ -24,3 +24,6 @@
      - removed the experimental STORE command and pending EVAL source state
      - added FUNCTIONS to list defined workspace functions, including imports;
        documented redefinition warnings and one-time EVAL setup statements
+     - made screen editing insert by default; Insert still toggles overwrite
+     - rerunning an earlier screen entry replaces its previous output directly
+       below it, removes stale result rows, and retains later entries
