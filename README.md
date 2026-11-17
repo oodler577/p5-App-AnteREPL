@@ -28,7 +28,9 @@ Shift+Enter (when the terminal distinguishes it) or Ctrl-N inserts a newline
 without submitting, including inside an editable multiline EVAL block.
 `EVAL sub triple { return 3 * shift; }` defines a session-only function in the
 current workspace. Immediate code and `RUN` can call it; it does not enter
-the numbered program or appear in `SAVE`.
+the numbered program or appear in `SAVE`. `FUNCTIONS` lists defined functions
+in the current workspace, including imports. Redefining a named subroutine
+replaces it with Perl's usual warning; no confirmation is required.
 
 ## Install and run
 

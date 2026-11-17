@@ -525,6 +525,13 @@ sub reset_workspace {
     $_[0]->{workspace} = 'App::AnteREPL::Workspace::S' . ++$next_workspace;
 }
 
+sub function_names {
+    my ($self) = @_;
+    my $package = $self->{workspace} . '::';
+    no strict 'refs';
+    return sort grep { defined &{ $package . $_ } } keys %{$package};
+}
+
 sub evaluate {
     my ($self, $code, $stored) = @_;
     my $label = $stored ? 'BASIC_PERL_program' : 'BASIC_PERL_prompt';
@@ -589,7 +596,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/i;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -655,6 +662,10 @@ ENTERING AND RUNNING PERL
                         Lowercase eval keeps Perl's normal eval semantics.
   EVAL sub name { ... } Define a session function without storing source.
                         Immediate code and RUN can call it. SAVE excludes it.
+                        Redefining warns by default and replaces the function.
+  FUNCTIONS             List defined names in this workspace, alphabetically.
+                        Includes imports; excludes other packages and stubs.
+                        Works during AUTO; does not execute or store source.
   ? expression          Evaluate in scalar context and display the result.
   DUMP expression       Data::Dumper output: dump $FOO or dump \%ENV.
   PEEK expression       Devel::Peek internals: peek $FOO or peek $FOO, 10.
@@ -807,7 +818,7 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
+    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
         my ($command, $force, $tail) = (uc($1), $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
@@ -852,6 +863,11 @@ sub dispatch {
             elsif ($command eq 'CLS') { $self->clear_screen; }
             elsif ($command eq 'NEW' || $command eq 'CLEAR') { $self->clear($force); }
             elsif ($command eq 'RESET') { $self->reset_workspace; print "Perl workspace reset; program retained.\n"; }
+            elsif ($command eq 'FUNCTIONS') {
+                my @names = $self->function_names;
+                print @names ? join('', map { "$_\n" } @names)
+                    : "No functions defined in this workspace.\n";
+            }
             elsif ($command eq 'STATUS') {
                 my @numbers = $self->numbers;
                 print scalar(@numbers), ' lines; ', ($self->dirty ? 'unsaved changes' : 'unchanged'),
@@ -1551,6 +1567,38 @@ or a lexical C<my sub>; it is a normal named package subroutine.
 To persist a definition deliberately, enter its source as numbered lines,
 through AUTO, or through EDIT, then SAVE the program. There is no automatic
 copying of evaluated source into the program or session serialization.
+
+=head2 Listing functions
+
+C<FUNCTIONS> prints defined function names in the current workspace, one per
+line in alphabetical order. It includes imported functions and aliases in that
+package, but excludes other packages, forward declarations without a body,
+and anonymous functions held only in variables. An empty workspace reports
+C<No functions defined in this workspace.> The command is case-insensitive,
+takes no arguments, and works during AUTO without storing or executing source.
+Definitions in numbered source appear only after RUN installs them.
+
+=head2 Redefining functions and running setup code
+
+Statements outside a subroutine body run once each time the EVAL entry is
+submitted. The named subroutine remains available afterward. For example:
+
+    EVAL do {
+        $setups++;
+        sub triple { return 3 * shift; }
+    }
+    FUNCTIONS
+    say triple(14)
+
+Defining C<triple> again replaces the function used by subsequent calls and
+normally prints Perl's C<Subroutine triple redefined> warning. There is no
+confirmation prompt. Existing code references, such as C<$old = \&triple>,
+still call the previous body. Perl warning controls such as
+C<no warnings 'redefine'> apply within the entry as usual.
+
+Evaluation is not transactional: named subroutines are installed at compile
+time, so a later runtime exception does not undo their definitions or other
+side effects already performed.
 
 =head1 ENVIRONMENT
 

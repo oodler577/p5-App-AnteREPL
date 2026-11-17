@@ -22,3 +22,5 @@
      - clarified that EVAL leaves AUTO active and function definitions are
        silent; tested session-only functions without storing their source
      - removed the experimental STORE command and pending EVAL source state
+     - added FUNCTIONS to list defined workspace functions, including imports;
+       documented redefinition warnings and one-time EVAL setup statements

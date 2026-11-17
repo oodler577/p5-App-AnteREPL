@@ -153,6 +153,40 @@ $session->dispatch('EVAL sub STORE { say "ordinary function" }');
 is capture { $session->dispatch('STORE "argument"') }, "ordinary function\n",
     'STORE is no longer reserved as a REPL command';
 
+my $functions = App::AnteREPL->new;
+is capture { $functions->dispatch('FUNCTIONS') }, "No functions defined in this workspace.\n",
+    'FUNCTIONS describes an empty workspace without exposing other sessions';
+$functions->dispatch(q{EVAL do { $setups++; sub triple { 3 * shift } }});
+$functions->dispatch(q{EVAL $old = \&triple; $value = 1; $callback = sub { 7 }; sub pending;});
+$functions->dispatch(q{EVAL use Scalar::Util qw(blessed); *alias = \&triple;});
+$functions->dispatch('10 sub from_program { 9 }');
+is capture { $functions->dispatch('functions') }, "alias\nblessed\ntriple\n",
+    'FUNCTIONS sorts local names and imports, excluding variables, stubs and unrun source';
+$functions->dispatch('RUN');
+is capture { $functions->dispatch('FUNCTIONS') }, "alias\nblessed\nfrom_program\ntriple\n",
+    'RUN-defined functions join the listing';
+my $warnings = '';
+{
+    local $SIG{__WARN__} = sub { $warnings .= join '', @_ };
+    $functions->dispatch(q{EVAL sub triple { 4 * shift }});
+}
+like $warnings, qr/Subroutine triple redefined/, 'redefinition warns without asking for input';
+is capture { $functions->dispatch(q{say triple(14), ':', $old->(14), ':', $setups}) }, "56:42:1\n",
+    'new calls use the replacement, old references keep the old body, setup ran once';
+capture { $functions->dispatch('AUTO') };
+my $functions_source = $functions->source;
+my %functions_auto = %{ $functions->{auto} };
+is capture { $functions->dispatch('FuNcTiOnS') }, "alias\nblessed\nfrom_program\ntriple\n",
+    'FUNCTIONS is case-insensitive and available during AUTO';
+is $functions->source, $functions_source, 'FUNCTIONS leaves numbered source unchanged';
+is_deeply $functions->{auto}, \%functions_auto, 'FUNCTIONS leaves AUTO numbering unchanged';
+like fails { $functions->dispatch('FUNCTIONS extra') }, qr/Usage: FUNCTIONS/, 'FUNCTIONS rejects arguments';
+like fails { $functions->dispatch('FUNCTIONS!') }, qr/The ! suffix/, 'FUNCTIONS has no force suffix';
+capture { $functions->dispatch('RESET') };
+is capture { $functions->dispatch('FUNCTIONS') }, "No functions defined in this workspace.\n",
+    'FUNCTIONS follows RESET to the fresh workspace despite retained source';
+is capture { $session->dispatch('FUNCTIONS') }, "STORE\n", 'another session retains its own functions';
+
 {
     local %ENV = (FIRST => 'startup', EMPTY => '');
     my $env = App::AnteREPL->new;
