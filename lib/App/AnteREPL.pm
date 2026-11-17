@@ -751,6 +751,7 @@ SHELL AND EXIT
 
 SCREEN KEYS
   Arrows                Move through screen text, including LIST output.
+  Left at row start     Move to the previous row's end; stop at the first row.
   Enter                 Submit selected row or its complete multiline entry.
                         Rerunning replaces its output directly below the entry;
                         later entries remain. Cursor follows the new result.
@@ -1320,7 +1321,13 @@ sub edit_key {
         my $length = length $self->{rows}[ $self->{row} ]{text};
         $self->{col} = $length if $self->{col} > $length;
     }
-    elsif ($key eq 'LEFT') { --$self->{col} if $self->{col} > 0; }
+    elsif ($key eq 'LEFT') {
+        if ($self->{col} > 0) { --$self->{col}; }
+        elsif ($self->{row} > 0) {
+            --$self->{row};
+            $self->{col} = length $self->{rows}[$self->{row}]{text};
+        }
+    }
     elsif ($key eq 'RIGHT') { ++$self->{col} if $self->{col} < length $row->{text}; }
     elsif ($key eq 'HOME') { $self->{col} = 0; }
     elsif ($key eq 'END') { $self->{col} = length $row->{text}; }
@@ -1884,8 +1891,10 @@ not C<dumb>; it produces no output when redirected or piped.
 
 Typing inserts characters by default, including when editing earlier rows;
 Insert switches between insert and overwrite. Backspace/Delete remove characters,
-Home/End move within a row, and PageUp/PageDown move through retained screen
-text. Esc or Ctrl-End returns to a blank row at the bottom; Ctrl-Home visits the
+Home/End move within a row. Left at the start of a row moves to the end of
+the previous row, stopping at the oldest retained row. Empty rows are visited
+one at a time. PageUp/PageDown move through retained screen text.
+Esc or Ctrl-End returns to a blank row at the bottom; Ctrl-Home visits the
 oldest row. Ctrl-U clears a row, Ctrl-L redraws, and Ctrl-C cancels input or
 interrupts running Perl. The screen retains up to 5,000 output/input rows during
 this session, with no saved history. Long rows scroll horizontally with the

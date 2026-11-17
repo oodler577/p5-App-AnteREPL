@@ -29,3 +29,5 @@
        below it, removes stale result rows, and retains later entries
      - removed the extra blank spacer before later commands after a rerun;
        preserved deliberate blank output and the following entry's text
+     - made Left at the start of a screen row move to the previous row's end,
+       stopping at the first retained row

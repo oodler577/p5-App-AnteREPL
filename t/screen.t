@@ -123,6 +123,30 @@ is $editing->{rows}[ $editing->{row} ]{text}, 'line 26', 'PageUp navigates scree
 $editing->edit_key('BOTTOM');
 is $editing->{rows}[ $editing->{row} ]{text}, '', 'bottom returns to a blank row';
 
+{
+    my $left = TestScreen->new;
+    $left->append("first\n\nthird\n");
+    my @before = map { $_->{text} } @{ $left->{rows} };
+    $left->edit_key('LEFT');
+    is_deeply [@{$left}{qw(row col)}], [2, 5], 'Left from a fresh row reaches the end of the preceding text';
+    $left->edit_key('HOME');
+    $left->edit_key('LEFT');
+    is_deeply [@{$left}{qw(row col)}], [1, 0], 'Left visits an empty preceding row without skipping it';
+    $left->edit_key('LEFT');
+    is_deeply [@{$left}{qw(row col)}], [0, 5], 'another Left crosses the empty row to the earlier text end';
+    $left->edit_key('LEFT');
+    is_deeply [@{$left}{qw(row col)}], [0, 4], 'Left within a row still moves one character';
+    $left->edit_key('HOME');
+    $left->edit_key('LEFT') for 1 .. 3;
+    is_deeply [@{$left}{qw(row col)}], [0, 0], 'Left stops at the first retained row';
+    is_deeply [map { $_->{text} } @{ $left->{rows} }], \@before, 'Left navigation never edits or joins rows';
+
+    my $block = $left->feed('BOTTOM', ['PASTE', "EVAL do {\nsay 1;\n}"],
+        'HOME', 'LEFT', typing(' say 2;'), 'ENTER');
+    is $block, "EVAL do {\nsay 1; say 2;\n}", 'Left crosses a multiline entry boundary and editing retains the whole group';
+    is capture { $repl->dispatch($block) }, "1\n2\n", 'the edited multiline entry remains executable';
+}
+
 my $cancel = TestScreen->new;
 $cancel->feed(typing('$bad = {'), 'ENTER', 'EOF');
 $cancel->fresh;
@@ -295,7 +319,7 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     my $code = q{print "Name: "; chomp($name = <STDIN>); say "Hi $name"};
     screen_run($s, $r, typing($code), 'ENTER', typing('Alice'), 'ENTER');
     screen_run($s, $r, typing('say "keep"'), 'ENTER');
-    screen_run($s, $r, 'TOP', 'ENTER', typing('Bob'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'ENTER', 'LEFT', typing('Bob'), 'ENTER');
     is_deeply screen_rows($s), [$code, 'Name: Bob', 'Hi Bob', 'say "keep"', 'keep', ''],
         'program STDIN and prompts stay beside a rerun entry with later rows present';
 }

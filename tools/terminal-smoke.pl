@@ -380,6 +380,15 @@ check(join('|', $view->lines) eq join('|', 'say triple(13)', '39', 'say "later-r
 send_text("\e[1;5F");
 wait_for(sub { $view->{row} == 4 && $view->{col} == 0 }, 'Ctrl-End after resubmission');
 print "PASS: earlier entries use insert editing and replace results in place while retaining later commands\n";
+send_text("\e[D");
+wait_for(sub { $view->{row} == 3 && $view->{col} == length('later-result') }, 'Left from blank row to previous end');
+send_text("\e[H\e[D");
+wait_for(sub { $view->{row} == 2 && $view->{col} == length('say "later-result"') }, 'Left from output to command end');
+send_text("\e[1;5H\e[D");
+wait_for(sub { $view->{row} == 0 && $view->{col} == 0 }, 'Left stops on first row');
+check(has_line('say triple(13)') && has_line('39') && has_line('say "later-result"') && has_line('later-result'),
+    'Left crossing a row boundary changed screen text');
+print "PASS: Left crosses to the previous row end and stops at the first row\n";
 send_text("\x04");
 finish_repl();
 print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and echo\n";
