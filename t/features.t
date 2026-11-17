@@ -130,41 +130,28 @@ $immediate->dispatch(q{eval { $from_stored_eval = 9 }});
 like $immediate->listing('20'), qr/^20 eval \{/, 'lowercase eval follows AUTO storage rules';
 is capture { $immediate->dispatch(q{EVAL say "immediate"}) }, "immediate\n", 'uppercase EVAL bypasses AUTO';
 
-my $keep = App::AnteREPL->new;
-like fails { $keep->dispatch('STORE') }, qr/No EVAL entry/, 'STORE requires a successful EVAL';
-$keep->dispatch("EVAL \$definitions++;\nsub triple {\nreturn 3 * shift;\n}");
-is $keep->source, '', 'EVAL-defined functions start outside VRAM';
-$keep->dispatch('10 say triple(14)');
-is capture { $keep->dispatch('RUN') }, "42\n", 'RUN calls an EVAL-defined function';
-like capture { $keep->dispatch('STATUS') }, qr/EVAL source ready/, 'STATUS reports source available to STORE';
-like capture { $keep->dispatch('STORE') }, qr/Stored 4 lines at 15-30/, 'STORE appends EVAL source in increments of five';
-is $keep->evaluate('$definitions', 0), 1, 'STORE does not execute the code again';
-like fails { $keep->dispatch('STORE') }, qr/No EVAL entry/, 'repeated STORE does not duplicate an entry';
-$keep->save("$dir/functions.pl");
-my $reloaded = App::AnteREPL->new;
-$reloaded->load("$dir/functions.pl");
-is capture { $reloaded->dispatch('RUN') }, "42\n", 'SAVE and fresh LOAD/RUN retain the stored function';
-$keep->undo;
-is_deeply [$keep->numbers], [10], 'STORE is a single source undo operation';
-is capture { $keep->dispatch('say triple(2)') }, "6\n", 'undoing STORE leaves the live function callable';
-capture { $keep->dispatch('AUTO 100 20'); $keep->dispatch('AUTO ECHO ON') };
-$keep->dispatch('EVAL $stored_value = 7');
-capture { $keep->dispatch('STORE 10 10') };
-is $keep->listing('20'), "20 \$stored_value = 7;\n", 'STORE skips occupied numbers and supplies single-line semicolon';
-is_deeply $keep->{auto}, {next=>100, step=>20}, 'STORE retains AUTO position and increment';
-ok $keep->{auto_echo}, 'STORE retains echo preference';
-$keep->dispatch("EVAL \$x = 1;\n\$y = 2;");
-my $saved_source = $keep->source;
-like fails { $keep->dispatch('STORE 999999999') }, qr/nothing stored/, 'STORE rejects overflow atomically';
-is $keep->source, $saved_source, 'failed STORE retains source';
-capture { $keep->dispatch('STORE') };
-like $keep->source, qr/\$y = 2;/, 'failed STORE retains the pending entry for retry';
-$keep->dispatch('EVAL $x = 3');
-like fails { $keep->dispatch('EVAL die "failed"') }, qr/failed/, 'failed EVAL is reported';
-like fails { $keep->dispatch('STORE') }, qr/No EVAL entry/, 'failed EVAL prevents accidentally storing an older entry';
-$keep->dispatch('EVAL $x = 4');
-capture { $keep->dispatch('RESET') };
-like fails { $keep->dispatch('STORE') }, qr/No EVAL entry/, 'RESET clears pending EVAL source';
+my $session = App::AnteREPL->new;
+$session->dispatch('EVAL sub triple { return 3 * shift }');
+{
+    no strict 'refs';
+    is ref(*{ $session->{workspace} . '::triple' }{CODE}), 'CODE',
+        'EVAL installs a callable function in the current workspace symbol table';
+}
+is $session->source, '', 'session-only function leaves VRAM empty';
+ok !$session->dirty, 'session-only definition does not dirty the program';
+$session->dispatch('10 say triple(14)');
+is capture { $session->dispatch('RUN') }, "42\n", 'RUN can call the session-only function';
+$session->save("$dir/session.pl");
+is App::AnteREPL::_read_text("$dir/session.pl"), "say triple(14);\n",
+    'SAVE contains the stored call, not the session-only function';
+$session->dispatch('CLEAR');
+is capture { $session->dispatch('say triple(2)') }, "6\n", 'CLEAR retains live functions';
+capture { $session->dispatch('RESET') };
+like fails { $session->dispatch('say triple(2)') }, qr/Undefined subroutine/,
+    'RESET selects a fresh symbol table for subsequent evaluation';
+$session->dispatch('EVAL sub STORE { say "ordinary function" }');
+is capture { $session->dispatch('STORE "argument"') }, "ordinary function\n",
+    'STORE is no longer reserved as a REPL command';
 
 {
     local %ENV = (FIRST => 'startup', EMPTY => '');

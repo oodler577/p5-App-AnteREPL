@@ -26,8 +26,9 @@ variables, and `%ENV`. Use `LIST` to display the program again.
 Uppercase `EVAL` executes immediately; lowercase `eval` is ordinary Perl.
 Shift+Enter (when the terminal distinguishes it) or Ctrl-N inserts a newline
 without submitting, including inside an editable multiline EVAL block.
-To keep code you tried with uppercase `EVAL`, use `STORE`. It copies that entry
-into the numbered program without executing it again; `SAVE` writes it to disk.
+`EVAL sub triple { return 3 * shift; }` defines a session-only function in the
+current workspace. Immediate code and `RUN` can call it; it does not enter
+the numbered program or appear in `SAVE`.
 
 ## Install and run
 

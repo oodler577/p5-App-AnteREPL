@@ -326,12 +326,6 @@ wait_for(sub { has_line('split-enter') }, 'inserted blank rows remain executable
 command(q{eval { die "caught" }; say $@ =~ /caught/ ? "perl-eval-ok" : "bad"}, 'perl-eval-ok');
 print "PASS: Ctrl-D leaves AUTO; Shift-Enter/Ctrl-N insert rows; lowercase eval catches exceptions\n";
 
-command('EVAL $stored_runs++; sub from_eval { return 42 }', 'EVAL $stored_runs++; sub from_eval { return 42 }');
-command('say from_eval()', '42');
-command('STORE', 'Stored 1 line at 25. Use SAVE to write them.');
-command('say "stored-runs:$stored_runs"', 'stored-runs:1');
-print "PASS: STORE keeps EVAL source without executing it again\n";
-
 check(index($transcript, 'READY>') < 0, 'legacy prompt appeared');
 command('NEW!', 'NEW!');
 command('CLS', '');
@@ -342,14 +336,14 @@ wait_for(sub { has_line('    return 3 * shift;') && $view->{row} == 2 && $view->
 send_text("}\r");
 wait_for(sub { has_line('}') && $view->{row} == 3 && $view->{col} == 0 }, 'typed closing brace returns to blank row');
 command('say triple(14)', '42');
-command('STORE', 'Stored 3 lines at 5-15. Use SAVE to write them.');
+command('STATUS', '0 lines; unchanged; no save filename.');
 my $functions_file = File::Spec->catfile($temporary, 'functions.pl');
 command(qq{SAVE "$functions_file"}, "Saved $functions_file.");
 open my $saved_function, '<:raw', $functions_file or die "$functions_file: $!\n";
 my $function_source = do { local $/; <$saved_function> };
 close $saved_function;
-check($function_source eq "sub triple {\n    return 3 * shift;\n}\n", 'typed function saved with unrelated commands');
-print "PASS: exact typed EVAL sub triple example closes with Enter, prints 42, stores, and saves\n";
+check($function_source eq '', 'session-only function leaked into SAVE');
+print "PASS: typed EVAL function closes with Enter and stays callable without entering VRAM or SAVE\n";
 send_text("\x04");
 finish_repl();
 print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and echo\n";

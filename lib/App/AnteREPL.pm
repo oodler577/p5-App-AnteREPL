@@ -490,7 +490,7 @@ sub auto_mode {
 }
 
 sub auto_store {
-    my ($self, $source, $quiet) = @_;
+    my ($self, $source) = @_;
     die "AUTO source cannot contain NUL bytes or bare carriage returns.\n" if $source =~ /[\r\0]/;
     my $literal = $source =~ s/\A:(?:[ \t])?//;
     my @source = split /\n/, $source, -1;
@@ -511,29 +511,8 @@ sub auto_store {
     $next += $step while $next <= $max_line && exists $lines{$next};
     if ($next > $max_line) { delete $self->{auto}; }
     else { $self->{auto}{next} = $next; }
-    print @stored if $self->{auto_echo} && !$quiet;
-    print "AUTO off: reached maximum line number.\n" unless $self->{auto} || $quiet;
-}
-
-sub store_eval {
-    my ($self, $tail) = @_;
-    my @args = _args($tail, 0, 2, 'STORE [start [step]]');
-    die "No EVAL entry to store. Use uppercase EVAL first.\n" unless defined $self->{pending_eval};
-    my @numbers = $self->numbers;
-    my %before = map { $_ => 1 } @numbers;
-    my $step = @args > 1 ? _number($args[1]) : 5;
-    my $start = @args ? _number($args[0]) : (@numbers ? $numbers[-1] + $step : $step);
-    _number($start);
-    {
-        # Reuse AUTO's atomic numbering and source rules without changing
-        # the user's entry mode, increment, or echo preference.
-        local $self->{auto} = { next => $start, step => $step };
-        $self->auto_store($self->{pending_eval}, 1);
-    }
-    my @stored = grep { !$before{$_} } $self->numbers;
-    delete $self->{pending_eval};
-    print 'Stored ', scalar(@stored), (@stored == 1 ? ' line at ' : ' lines at '),
-        (@stored == 1 ? $stored[0] : "$stored[0]-$stored[-1]"), ". Use SAVE to write them.\n";
+    print @stored if $self->{auto_echo};
+    print "AUTO off: reached maximum line number.\n" unless $self->{auto};
 }
 
 sub input_needs_more {
@@ -544,7 +523,6 @@ sub input_needs_more {
 
 sub reset_workspace {
     $_[0]->{workspace} = 'App::AnteREPL::Workspace::S' . ++$next_workspace;
-    delete $_[0]->{pending_eval};
 }
 
 sub evaluate {
@@ -611,7 +589,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|STORE|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)\b/i;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -675,15 +653,8 @@ ENTERING AND RUNNING PERL
                         EVAL leaves AUTO on. AUTO OFF resumes ordinary input.
                         EVAL do { ... } groups multiline code without storing.
                         Lowercase eval keeps Perl's normal eval semantics.
-  STORE [start [step]]  Copy the last successful EVAL source into the program;
-                        never execute it again. Default: append, increment 5.
-                        Skip occupied numbers; one physical line per number.
-                        Single-line input gets a missing ;. Multiline input
-                        stays literal: supply its own statement terminators.
-                        STORE uses one UNDO step and leaves AUTO unchanged.
-                        Successful STORE consumes the pending entry; a new
-                        EVAL replaces it, and failed EVAL or RESET clears it.
-                        Ordinary Perl calls leave it available. SAVE persists.
+  EVAL sub name { ... } Define a session function without storing source.
+                        Immediate code and RUN can call it. SAVE excludes it.
   ? expression          Evaluate in scalar context and display the result.
   DUMP expression       Data::Dumper output: dump $FOO or dump \%ENV.
   PEEK expression       Devel::Peek internals: peek $FOO or peek $FOO, 10.
@@ -720,8 +691,7 @@ LISTING, EDITING, AND RECOVERY
                         No output in a pipe or on a dumb terminal.
   NEW / CLEAR           Clear source and its filename; retain Perl variables.
   RESET                 Fresh Perl workspace; retain source and live %ENV.
-  STATUS                Line count, save status, filename, AUTO next/step,
-                        and whether EVAL source is available for STORE.
+  STATUS                Line count, save status, filename, and AUTO next/step.
 
 FILES
   LOAD file             Read ordinary Perl or numbered BASIC PERL source.
@@ -837,17 +807,14 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|STORE|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
+    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
         my ($command, $force, $tail) = (uc($1), $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
         if ($command eq 'EVAL') {
-            delete $self->{pending_eval};
             die "EVAL needs Perl code.\n" unless length $tail;
             $self->evaluate($tail, 0);
-            $self->{pending_eval} = $tail;
         }
-        elsif ($command eq 'STORE') { $self->store_eval($tail); }
         elsif ($command eq 'AUTO') { $self->auto_mode($tail); }
         elsif ($command eq 'ENV') { $self->environment($tail); }
         elsif ($command eq 'EDIT' && uc($tail) eq 'ENV') { $self->environment('EDIT'); }
@@ -890,7 +857,6 @@ sub dispatch {
                 print scalar(@numbers), ' lines; ', ($self->dirty ? 'unsaved changes' : 'unchanged'),
                     '; ', (defined $self->{filename} ? $self->{filename} : 'no save filename'), ".\n";
                 print "AUTO next $self->{auto}{next}, step $self->{auto}{step}.\n" if $self->{auto};
-                print "EVAL source ready for STORE.\n" if defined $self->{pending_eval};
             }
             elsif ($command eq 'HELP') { print help(); }
             elsif ($command eq 'QUIT' || $command eq 'EXIT') {
@@ -1561,41 +1527,30 @@ copies; C<AUTO ECHO OFF> disables them. This preference lasts for the session
 and does not start or stop AUTO. Typed screen text and AUTO status/error
 messages remain visible.
 
-=head1 TRY CODE AND KEEP ITS SOURCE
+=head1 SESSION-ONLY FUNCTIONS
 
-Immediate input and RUN share live package functions and variables. Their
-source is separate: SAVE writes only the numbered program. To try a function
-and then keep its definition without retyping it:
+Use a named subroutine to install a function in the current REPL workspace's
+symbol table without adding its definition to the numbered program:
 
     AUTO OFF
     EVAL sub triple {
         return 3 * shift;
     }
     say triple(14)
-    STORE
-    SAVE functions.pl
 
-Press ordinary Enter after the closing brace. A successful function definition
-prints nothing; the next blank row accepts a new entry. EVAL does not turn AUTO
-off, so the example explicitly leaves AUTO first. Otherwise the subsequent
-C<say triple(14)> is stored quietly. STATUS reports AUTO's next number and
-whether the completed EVAL source is available for STORE.
+Press ordinary Enter after the closing brace. The definition prints nothing;
+the next entry calls it and prints 42. EVAL also works while AUTO is active,
+but leaves AUTO on. Use C<? triple(14)> for an immediate call during AUTO.
 
-The call prints 42. STORE copies the original source of the most recent
-successful uppercase EVAL into the program, without its EVAL prefix and
-without executing it again. It defaults to appending in increments of 5;
-C<STORE 100 10> selects a start and step. Occupied numbers are skipped. It
-uses AUTO's source rules: single-line entries receive a missing semicolon,
-while multiline entries retain literal syntax and need their own terminators.
-Comments and indentation are preserved; function bodies are not deparsed.
+The function lives in the workspace package of this Perl process. It is
+callable by immediate input and RUN, but does not appear in LIST or SAVE.
+CLS and NEW/CLEAR retain it. RESET selects a fresh workspace where that name
+is no longer defined. Here "session-only" does not mean Perl's C<local> keyword
+or a lexical C<my sub>; it is a normal named package subroutine.
 
-Ordinary Perl calls, LIST, and RUN do not replace the pending EVAL source.
-STATUS reports when an entry is available. A new uppercase EVAL replaces it;
-a failed EVAL or RESET clears it. Successful STORE consumes the pending entry
-so repeating STORE does not duplicate it. A failed STORE keeps it for retry.
-STORE is one source UNDO operation and does not change AUTO settings. Undoing
-the source edit leaves live functions intact. SAVE persists the source, not
-runtime values or dependencies on other unstored workspace definitions.
+To persist a definition deliberately, enter its source as numbered lines,
+through AUTO, or through EDIT, then SAVE the program. There is no automatic
+copying of evaluated source into the program or session serialization.
 
 =head1 ENVIRONMENT
 

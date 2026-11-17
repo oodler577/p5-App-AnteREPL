@@ -94,11 +94,7 @@ my $paste = TestScreen->new;
     my $call = $typed->feed(typing('say triple(14)'), 'ENTER');
     is $call, 'say triple(14)', 'next typed command is outside the EVAL group';
     is capture { $r->dispatch($call) }, "42\n", 'the typed subroutine is callable immediately';
-    my $store = $typed->feed(typing('STORE'), 'ENTER');
-    like capture { $r->dispatch($store) }, qr/Stored 3 lines at 5-15/,
-        'STORE is dispatched separately after the typed definition';
-    is $r->source, "sub triple {\n    return 3 * shift;\n}\n",
-        'stored definition excludes subsequent immediate commands';
+    is $r->source, '', 'session function definition and call leave VRAM empty';
 
     capture { $r->dispatch('AUTO') };
     $entry = $typed->feed(typing('EVAL sub from_auto {'), 'ENTER',
@@ -107,7 +103,7 @@ my $paste = TestScreen->new;
     ok $r->{auto}, 'closing EVAL does not leave AUTO';
     $call = $typed->feed(typing('say from_auto(6)'), 'ENTER');
     is capture { $r->dispatch($call) }, '', 'ordinary call after EVAL is stored quietly during AUTO';
-    is $r->listing('20'), "20 say from_auto(6);\n", 'quiet input was stored outside the completed EVAL block';
+    is $r->listing('5'), "5 say from_auto(6);\n", 'quiet input was stored outside the completed EVAL block';
     capture { $r->dispatch($typed->feed(typing('AUTO OFF'), 'ENTER')) };
     is capture { $r->dispatch($typed->feed(typing('say from_auto(6)'), 'ENTER')) }, "42\n",
         'AUTO OFF makes the same function call execute immediately';
