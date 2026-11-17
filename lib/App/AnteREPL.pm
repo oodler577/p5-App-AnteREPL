@@ -754,6 +754,7 @@ SCREEN KEYS
   Enter                 Submit selected row or its complete multiline entry.
                         Rerunning replaces its output directly below the entry;
                         later entries remain. Cursor follows the new result.
+                        No blank spacer is added. Esc goes to fresh input.
   Shift-Enter / Ctrl-N   Insert newline at cursor without submitting the entry.
                         Shift-Enter needs a distinct terminal key sequence;
                         use Ctrl-N if it behaves like ordinary Enter.
@@ -1045,12 +1046,29 @@ END { eval { $active->leave if $active; }; }
 
 sub fresh {
     my ($self, $bottom) = @_;
-    my $row = !$bottom && defined $self->{output_row}
-        ? $self->{output_row} : $#{ $self->{rows} };
-    if (length $self->{rows}[$row]{text}) {
-        splice @{ $self->{rows} }, ++$row, 0, { text => '' };
+    my $in_place = !$bottom && defined $self->{output_row};
+    my $row = $in_place ? $self->{output_row} : $#{ $self->{rows} };
+    if ($in_place) {
+        if (length $self->{rows}[$row]{text}) {
+            ++$row;
+            push @{ $self->{rows} }, { text => '' } if $row == @{ $self->{rows} };
+        }
+        elsif ($row < $#{ $self->{rows} }
+            && ($self->{rows}[$row]{output_for} || 0) == $self->{output_owner}) {
+            # append's final blank row is a cursor position, not a separator.
+            # Preserve actual blank output rows and the following entry itself.
+            splice @{ $self->{rows} }, $row, 1;
+        }
+        if ($self->{rows}[$row]{text} eq ''
+            && ($self->{rows}[$row]{output_for} || 0) == $self->{output_owner}) {
+            $self->{rows}[$row] = { text => '' };
+        }
     }
-    $self->{rows}[$row] = { text => '' };
+    else {
+        push @{ $self->{rows} }, { text => '' } if length $self->{rows}[$row]{text};
+        $row = $#{ $self->{rows} };
+        $self->{rows}[$row] = { text => '' };
+    }
     $self->{row} = $row;
     $self->{col} = 0;
     $self->{left} = 0;
@@ -1847,11 +1865,14 @@ through displayed input and output, including LIST output. Edit a numbered row
 and press Enter to update the stored program. Editing screen text alone does
 not change the program or execute it. When you resubmit an earlier entry, its
 new output replaces its previous output immediately below the entry, and the
-cursor stays just below the new result. Shorter or silent results remove stale
-output rows. Later entries and their output remain available; Esc or Ctrl-End
-still moves to the bottom. Multiline entries put their result below the whole
-group, even when you press Enter on a row in the middle. This changes only the
-screen display: executing Perl still repeats its normal side effects.
+cursor stays just below the new result. If another entry follows, the cursor
+moves to its start without inserting a blank spacer or erasing that entry.
+Shorter or silent results remove stale output rows; blank lines deliberately
+printed by Perl remain. Later entries and their output remain available;
+Esc or Ctrl-End moves to fresh input at the bottom. Multiline entries put their
+result below the whole group, even when you press Enter on a row in the middle.
+This changes only the screen display: executing Perl still repeats its normal
+side effects.
 
 C<CLS> clears the display and all retained screen rows, returning the cursor
 to the top left. The stored program ("VRAM"), live Perl variables, C<%ENV>,

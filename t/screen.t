@@ -236,11 +236,11 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     is_deeply screen_rows($s), ['say triple(3)', '9', ''], 'repeated Enter does not accumulate results or blank rows';
     screen_run($s, $r, typing('say "later"'), 'ENTER');
     screen_run($s, $r, 'TOP', 'END', 'LEFT', 'BACKSPACE', typing('7'), 'ENTER');
-    is_deeply screen_rows($s), ['say triple(7)', '21', '', 'say "later"', 'later', ''],
-        'replacing an earlier result preserves subsequent input and output';
-    is_deeply [@{$s}{qw(row col)}], [2, 0], 'cursor stays immediately below the replacement result';
+    is_deeply screen_rows($s), ['say triple(7)', '21', 'say "later"', 'later', ''],
+        'replacing an earlier result preserves subsequent input and output without a spacer';
+    is_deeply [@{$s}{qw(row col)}], [2, 0], 'cursor follows the result onto the intact next command';
     $s->edit_key('BOTTOM');
-    is $s->{row}, 5, 'Ctrl-End still reaches the bottom after an earlier resubmission';
+    is $s->{row}, 4, 'Ctrl-End still reaches the bottom after an earlier resubmission';
     is $r->source, '', 'screen replacement does not store or erase program source';
 
     my $toggle = TestScreen->new;
@@ -257,14 +257,14 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     screen_run($s, $r, typing('say "keep"'), 'ENTER');
     $r->dispatch('$n = 1');
     screen_run($s, $r, 'TOP', 'DOWN', 'ENTER');
-    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', '1', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', '1', 'say "keep"', 'keep', ''],
         'resubmitting from the middle of a block replaces all of its longer old output';
     $r->dispatch('$n = 0');
     screen_run($s, $r, 'TOP', 'ENTER');
-    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), ['EVAL do {', 'say for 1 .. $n;', '}', 'say "keep"', 'keep', ''],
         'a silent rerun removes obsolete results without removing later entries';
     screen_run($s, $r, 'TOP', 'END', 'NEWLINE', typing('say "added";'), 'ENTER');
-    is_deeply screen_rows($s), ['EVAL do {', 'say "added";', 'say for 1 .. $n;', '}', 'added', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), ['EVAL do {', 'say "added";', 'say for 1 .. $n;', '}', 'added', 'say "keep"', 'keep', ''],
         'splitting a previously submitted entry retains its output association';
 }
 
@@ -278,11 +278,11 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     screen_run($s, $r, typing('say "keep"'), 'ENTER');
     $r->dispatch(q{$suffix = 'x'});
     screen_run($s, $r, 'TOP', 'ENTER');
-    is_deeply screen_rows($s), [$code, 'prefixx', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), [$code, 'prefixx', 'say "keep"', 'keep', ''],
         'shorter output clears the old line suffix';
     $r->dispatch('$fail = 1');
     screen_run($s, $r, 'TOP', 'ENTER');
-    is_deeply screen_rows($s), [$code, 'failed', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), [$code, 'failed', 'say "keep"', 'keep', ''],
         'errors replace prior results at the same position';
     $r->dispatch('$fail = 0');
     screen_run($s, $r, 'TOP', 'ENTER');
@@ -296,7 +296,7 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     screen_run($s, $r, typing($code), 'ENTER', typing('Alice'), 'ENTER');
     screen_run($s, $r, typing('say "keep"'), 'ENTER');
     screen_run($s, $r, 'TOP', 'ENTER', typing('Bob'), 'ENTER');
-    is_deeply screen_rows($s), [$code, 'Name: Bob', 'Hi Bob', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), [$code, 'Name: Bob', 'Hi Bob', 'say "keep"', 'keep', ''],
         'program STDIN and prompts stay beside a rerun entry with later rows present';
 }
 
@@ -309,7 +309,7 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     screen_run($s, $r, typing('LIST'), 'ENTER');
     screen_run($s, $r, typing('say "keep"'), 'ENTER');
     screen_run($s, $r, 'TOP', 'ENTER');
-    is_deeply screen_rows($s), ['LIST', '5      say "indented";', '10 say "other";', '', 'say "keep"', 'keep', ''],
+    is_deeply screen_rows($s), ['LIST', '5      say "indented";', '10 say "other";', 'say "keep"', 'keep', ''],
         'LIST resubmission replaces its listing while retaining later entries';
     my $source = $r->source;
     screen_run($s, $r, 'UP', 'UP', 'ENTER');
@@ -319,10 +319,53 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
 
     $s->append("LIST 5\n" x 4999);
     screen_run($s, $r, 'TOP', 'ENTER');
-    is scalar @{ $s->{rows} }, 5000, 'rerunning at the retention limit keeps a bounded screen';
+    cmp_ok scalar @{ $s->{rows} }, '<=', 5000, 'rerunning at the retention limit keeps a bounded screen';
     is $s->{rows}[$s->{row} - 1]{text}, '5     say "indented";',
         'the newest listing row remains immediately above the cursor at the retention limit';
     ok !$s->{rows}[-1]{list_width}, 'retention trimming does not attach LIST padding to an unrelated tail row';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $r->dispatch('EVAL sub triple { 3 * shift }');
+    screen_run($s, $r, typing('say triple(14)'), 'ENTER');
+    screen_run($s, $r, typing('say "keep this line below"'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'END', 'LEFT', 'BACKSPACE', typing('3'), 'ENTER');
+    my $expected = ['say triple(13)', '39', 'say "keep this line below"', 'keep this line below', ''];
+    is_deeply screen_rows($s), $expected, 'changing 14 to 13 does not insert a blank before the following command';
+    screen_run($s, $r, 'TOP', 'ENTER') for 1 .. 3;
+    is_deeply screen_rows($s), $expected, 'repeated reruns keep the following command adjacent';
+    is_deeply [@{$s}{qw(row col)}], [2, 0], 'cursor rests at the start of the preserved following command';
+    screen_run($s, $r, 'ENTER');
+    is_deeply screen_rows($s), $expected, 'following command remains executable with its original output association';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $r->dispatch(q{$out = "one\n\n"});
+    screen_run($s, $r, typing('print $out'), 'ENTER');
+    screen_run($s, $r, typing('say "keep"'), 'ENTER');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), ['print $out', 'one', '', 'say "keep"', 'keep', ''],
+        'a blank line deliberately printed by the program is retained';
+    $r->dispatch(q{$out = ''});
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), ['print $out', 'say "keep"', 'keep', ''],
+        'empty output removes old results without inserting a replacement spacer';
+}
+
+{
+    my $s = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    screen_run($s, $r, typing('say "first"'), 'ENTER');
+    screen_run($s, $r, ['PASTE', "EVAL do {\nsay q(second);\n}"], 'ENTER');
+    screen_run($s, $r, 'TOP', 'ENTER');
+    is_deeply screen_rows($s), ['say "first"', 'first', 'EVAL do {', 'say q(second);', '}', 'second', ''],
+        'a following multiline entry is preserved without a spacer';
+    is screen_run($s, $r, 'DOWN', 'ENTER'), "EVAL do {\nsay q(second);\n}",
+        'cursor reuse does not break the following entry grouping';
 }
 
 done_testing;

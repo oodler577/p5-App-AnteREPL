@@ -6,7 +6,8 @@ The startup banner is `*** BASIC PERL V0.1 ***`.
 
 Screen editing inserts characters by default; Insert toggles overwrite mode.
 Move up, edit an earlier entry, and press Enter to replace its result directly
-below it. Later entries stay intact, and the cursor follows the new result.
+below it. Later entries stay intact without an added blank spacer. The cursor
+follows the result onto the next row; Esc moves to fresh input at the bottom.
 
 ```text
 AUTO
