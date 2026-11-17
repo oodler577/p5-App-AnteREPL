@@ -1,0 +1,436 @@
+% The main tutorial is one continuous session unless a slide says otherwise.
+{
+\setbeamercolor{background canvas}{bg=Terminal}
+\setbeamercolor{normal text}{fg=TerminalText,bg=Terminal}
+\begin{frame}[plain]
+\par\vspace{4mm}
+{\ttfamily\color{Lavender}\large *** BASIC PERL V0.1 ***}\par
+\par\vspace{9mm}
+{\color{white}\fontsize{36}{40}\selectfont\bfseries AnteREPL}\par
+\par\vspace{2mm}
+{\color{white}\LARGE Perl at the BASIC prompt}\par
+\par\vspace{10mm}
+{\color{TerminalText}\large Brett Estrade}\par
+\par\vspace{2mm}
+{\color{Lavender}\small Winter 2026 PCC \textemdash{} talk draft}
+\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner keeps the BASIC PERL name. This draft describes repository commit f453072 from November 17, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
+\end{frame}
+}
+
+\begin{frame}[fragile]{A small program within reach}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.54\textwidth}
+\begin{lstlisting}
+10 say "hello"
+LIST
+(*@\result{10 say "hello";}@*)
+RUN
+(*@\result{hello}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.41\textwidth}
+Try an expression now.\par\medskip
+Keep a short program in memory.\par\medskip
+Move back into the screen and edit it.
+\end{column}
+\end{columns}
+\takeaway{The BASIC interaction model, with real Perl.}
+\captionline{Green transcript lines show output. This opening example is separate from the tutorial session.}
+\note{About one minute. Lead with the interaction rather than implementation. Line numbers are editing addresses, not BASIC control flow or GOTO targets. No READY prompt is added. On a projector, say which lines are input and which are output. This is a separate introductory example; start a fresh app for the tutorial.}
+\end{frame}
+
+\begin{frame}{Screen, stored source, live workspace}
+\begin{tabularx}{\textwidth}{@{}P{27mm}YY@{}}
+\toprule
+\textbf{State} & \textbf{What it contains} & \textbf{How you inspect it}\\
+\midrule
+Screen & Editable input and output & Cursor keys, PageUp\\
+Stored program\newline (``VRAM'') & Source indexed by editing numbers & \cmd{LIST}, \cmd{EDIT}\\
+Perl workspace & Live package variables and functions & \cmd{?}, \cmd{DUMP}, \cmd{FUNCTIONS}\\
+\bottomrule
+\end{tabularx}
+\par\vspace{3mm}
+\cmd{RUN} executes stored source in the live workspace.\par\medskip
+\cmd{SAVE} writes stored source to a file.
+\note{Spend two minutes here; this is the central model. The word VRAM is a user-facing metaphor for the in-memory program, not emulated hardware memory. Displayed source, stored source, and a compiled live subroutine can differ. The process environment is another piece of process state, covered later. Return to this model whenever SAVE or RESET seems surprising.}
+\end{frame}
+
+\begin{frame}[fragile]{Installation and a fresh session}
+\kicker{In your system shell}
+\begin{lstlisting}[style=smallterminal]
+git clone https://github.com/oodler577/p5-App-AnteREPL.git
+cd p5-App-AnteREPL
+perl -Ilib script/anterepl
+\end{lstlisting}
+\par\vspace{2mm}
+Perl 5.16 or newer. An ANSI terminal enables screen editing.\par\medskip
+For an installed checkout: \cmd{cpanm .}, then \cmd{anterepl}.\par\medskip
+\cmd{anterepl --plain} provides a plain input fallback.
+\captionline{Native Windows screen mode needs Term::ReadKey. Its behavior still needs testing on Windows.}
+\note{Allow one minute if attendees installed beforehand, longer in a workshop. The source checkout command is usable without assuming a published CPAN release or GitHub release. Use the make program supplied by your Perl if installing manually. Term::ReadKey is optional on Unix because a core POSIX backend exists, but the installer requires it on native Windows. The tutorial's screen edits require screen mode. Do not use --plain for that demonstration.}
+\end{frame}
+
+\begin{frame}[fragile]{Immediate Perl and persistent values}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.5\textwidth}
+\begin{lstlisting}
+$n = 14
+say $n * 3
+(*@\result{42}@*)
+? $n * 3
+(*@\result{42}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.45\textwidth}
+Package variables survive the next entry.\par\medskip
+\cmd{my} belongs to one evaluation.\par\medskip
+\cmd{?} prints a scalar result. Ordinary expression input does not.
+\end{column}
+\end{columns}
+\captionline{Defaults: say enabled; strict subs and refs enabled; strict vars disabled.}
+\note{About one minute. Start the continuous tutorial here with AUTO off, as in a fresh session. Omitting a semicolon at the end of an immediate single expression is legal Perl string-eval behavior. The source-storage convenience for semicolons comes later. Our \$n is also fine. A lexical from an earlier evaluation will not be available to the next entry; that next entry can instead address a separate package variable of the same name.}
+\end{frame}
+
+\begin{frame}[fragile]{Multiline data stays one entry}
+\begin{lstlisting}[style=perl]
+$FOO = {
+    bar   => 1,
+    names => [qw(Alice Bob)],
+};
+\end{lstlisting}
+\par\vspace{2mm}
+Open delimiters continue the entry. Close them and press Enter to evaluate.\par\medskip
+Move within the group to edit it; Enter reevaluates the whole group.
+\captionline{Continuation checks delimiters and quotes. It is not a complete Perl parser.}
+\note{About one minute. Type this rather than paste it for the first demonstration, so attendees see continuation. A bracketed paste also stays together and waits for Enter. Heredocs, POD, and difficult syntax are better entered via EDIT or literal source lines. With AUTO on, the completed multiline group is stored, not executed. Supply the block's own semicolons.}
+\end{frame}
+
+\begin{frame}[fragile]{Values and Perl's internals}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.5\textwidth}
+\kicker{Data::Dumper}
+\begin{lstlisting}
+dump $FOO
+dump \%ENV
+? $FOO->{names}[0]
+(*@\result{\textquotesingle{}Alice\textquotesingle{}}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.45\textwidth}
+\kicker{Devel::Peek}
+\begin{lstlisting}
+peek $FOO
+peek $FOO, 10
+\end{lstlisting}
+See SV types, flags, reference counts, and referenced values.
+\end{column}
+\end{columns}
+\captionline{Use references for whole arrays and hashes. DUMP and PEEK are prompt commands; stored Perl calls the modules explicitly.}
+\note{About one minute. The core guts module is Devel::Peek. Its exact output, addresses, and flags depend on Perl and the value's current state, so do not promise a fixed dump. The optional limit bounds what it traverses or displays. Show dump \$FOO on the projector; avoid displaying a real environment with credentials. dump backslash-percent-ENV is a syntax example, not a required live step. PEEK captures native stderr to place its output in the screen.}
+\end{frame}
+
+\begin{frame}[fragile]{A function for this session}
+\begin{lstlisting}
+EVAL sub triple {
+    return 3 * shift;
+}
+say triple(14)
+(*@\result{42}@*)
+FUNCTIONS
+(*@\result{triple}@*)
+\end{lstlisting}
+\takeaway{The function is live immediately. Its source is not in LIST or SAVE.}
+\note{About two minutes. Press ordinary Enter after the closing brace. There is no extra terminator command to leave EVAL. EVAL sub defines a normal named sub in the current workspace package, not a lexical sub or Perl local. FUNCTIONS lists live names, including imports and aliases. It does not inspect unexecuted source. A plain sub declaration also works outside AUTO; uppercase EVAL makes the immediate intent explicit.}
+\end{frame}
+
+\begin{frame}[fragile]{An earlier result changes in place}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.48\textwidth}
+\kicker{Before editing}
+\begin{lstlisting}
+say triple(14)
+(*@\result{42}@*)
+say "keep this line below"
+(*@\result{keep this line below}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.48\textwidth}
+\kicker{After 14 becomes 13}
+\begin{lstlisting}
+say triple(13)
+(*@\result{39}@*)
+say "keep this line below"
+(*@\result{keep this line below}@*)
+\end{lstlisting}
+\end{column}
+\end{columns}
+\par\vspace{2mm}
+Insert editing is the default. Enter replaces that entry's previous output.\par\medskip
+Later entries stay intact. \key{Esc} returns to fresh input at the bottom.
+\note{Two-minute live demonstration and an important UX checkpoint. Type say triple(14), then the keep-this-line statement. Move up, replace 14 with 13, and submit. There should be no extra blank spacer before the later command. Output replacement is display behavior only: rerunning still repeats Perl side effects. Left at the beginning of a row now moves to the previous row's end, stopping at the oldest retained row. This behavior was added following human testing.}
+\end{frame}
+
+\begin{frame}[fragile]{Several blocks, one immediate evaluation}
+\begin{lstlisting}[style=perl]
+EVAL do {
+    my @values = (3, 7, 14);
+    for my $value (@values) {
+        say triple($value);
+    }
+};
+\end{lstlisting}
+\captionline{Output: 9, 21, 42 on separate rows. No source is added to the stored program.}
+\par\vspace{2mm}
+\key{Ctrl-N} inserts a newline without submitting.\par
+\key{Shift+Enter} does the same when the terminal distinguishes it.
+\note{About two minutes, including a live edit. Move to the middle of the completed block, insert a line using Ctrl-N, and press Enter from that middle row. The whole group reruns, with output after the entire group. EVAL stays uppercase to avoid conflict with Perl eval. The outer do block is a dependable way to group several statements while typing, even when bracketed paste is unavailable.}
+\end{frame}
+
+\begin{frame}[fragile]{Numbered source becomes a program}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.54\textwidth}
+\begin{lstlisting}
+10 say triple(14)
+5 say "Results"
+LIST
+(*@\result{5\space\space say "Results";}@*)
+(*@\result{10 say triple(14);}@*)
+RUN
+(*@\result{Results}@*)
+(*@\result{42}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.41\textwidth}
+A numbered entry inserts or replaces source.\par\medskip
+\cmd{RUN} evaluates the whole program in numeric order.\par\medskip
+Typing a number alone deletes that line.
+\end{column}
+\end{columns}
+\note{About two minutes. We now use the session function from stored code. Point out the inserted semicolons and aligned code column: the numbers themselves are left aligned and padded on the right. Number 5 sorts before 10. No statement executes until RUN. Try changing 14 to 13 by moving into the LIST result, then put it back if following the recorded tutorial. Editing the display does not change stored source until Enter.}
+\end{frame}
+
+\begin{frame}[fragile]{AUTO supplies the numbers}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.51\textwidth}
+\begin{lstlisting}
+AUTO
+say triple(3)
+say triple(7)
+AUTO OFF
+LIST 15-
+(*@\result{15 say triple(3);}@*)
+(*@\result{20 say triple(7);}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.44\textwidth}
+Default step: 5. Existing numbers are skipped.\par\medskip
+No duplicate numbered echo by default.\par\medskip
+\cmd{AUTO OFF}, \key{Ctrl-C}, or \key{Ctrl-D} ends AUTO.
+\end{column}
+\end{columns}
+\captionline{Commands still work. Uppercase EVAL and ? execute immediately while AUTO remains active.}
+\note{About one minute. We already have lines 5 and 10, so AUTO starts at 15. Ctrl-D during AUTO cancels unfinished input and ends AUTO without exiting AnteREPL. Outside AUTO it can exit if the stored source is saved. AUTO ECHO ON enables numbered duplicates but does not start AUTO. The quiet default still shows what the user types. A multiline AUTO entry stores physical rows literally and needs its own punctuation.}
+\end{frame}
+
+\begin{frame}[fragile]{LIST as an editing surface}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.42\textwidth}
+\begin{lstlisting}
+LIST 5-20
+LIST 10-
+LIST -20
+LIST SLOW
+LIST 10-500 PAUSE
+\end{lstlisting}
+\end{column}
+\begin{column}{.53\textwidth}
+Ranges include both endpoints.\par\medskip
+Move into a displayed numbered row, edit the code, then press Enter.\par\medskip
+Long listings scroll; Space pauses, Enter steps one row, S changes speed.
+\end{column}
+\end{columns}
+\captionline{Q, Esc, or Ctrl-C stops controlled listing. Typing or cursor movement returns to editing.}
+\note{About one minute. A short listing finishes immediately; use the optional long-listing exercise in the demo guide to show timing. PAUSE waits after each screenful; SLOW starts around four lines per second. Plain or piped mode does not pause. Alignment padding is not accidentally saved as extra source indentation when a LIST row is resubmitted.}
+\end{frame}
+
+\begin{frame}[fragile]{EDIT opens the stored program}
+\kicker{In AnteREPL}
+\begin{lstlisting}
+$ENV{EDITOR} = 'vi'
+EDIT
+\end{lstlisting}
+\par\vspace{2mm}
+The editor receives ordinary source, without editing numbers.\par\medskip
+Save and close it. Changed source returns as 10, 20, 30, \ldots\par\medskip
+\cmd{RUN} tries the result. \cmd{SAVE} writes the program file.
+\captionline{EDITOR, then VISUAL, then vi or notepad. GUI editors need a wait option, such as code --wait.}
+\note{About two minutes. Choose an editor installed on the demo machine; vi is just an example. Unchanged editor contents preserve the previous numbers. An editor error or invalid text leaves source unchanged. An intentional empty file clears the program. UNDO can reverse the successful source edit, including its renumbering. Saving the temporary editor file does not by itself write a previously named SAVE destination.}
+\end{frame}
+
+\begin{frame}[fragile]{A self-contained version of the program}
+\kicker{Replace the EDIT buffer with this source}
+\begin{lstlisting}[style=perl]
+use v5.16;
+use strict;
+use warnings;
+sub triple { return 3 * shift; }
+my @values = (3, 7, 14);
+for my $value (@values) {
+    say triple($value);
+}
+\end{lstlisting}
+\captionline{Included as demo/portable.pl. After EDIT, RUN prints 9, 21, 42. A redefinition warning is expected because triple is already live.}
+\note{About two minutes. This is the transition from experimenting to keeping a useful source file. Copy the included portable.pl source into EDIT, then save and close. The program includes its function, data, and pragmas, so it can run outside the workspace. RUN compiles the sub again, which warns if triple already exists; this is ordinary Perl. Editing or loading a definition by itself has not yet replaced the live sub.}
+\end{frame}
+
+\begin{frame}{SAVE writes source}
+\begin{tabularx}{\textwidth}{@{}P{43mm}Y@{}}
+\toprule
+\textbf{Command} & \textbf{File contents}\\
+\midrule
+\cmd{SAVE demo.pl} & Ordinary source, no editing numbers or added pragmas\\
+\cmd{SAVE demo.bperl} & Native header plus editing numbers and source\\
+\cmd{SAVE} & Same destination and format as the last SAVE or LOAD\\
+\cmd{EXPORT demo.pl} & Ordinary source plus AnteREPL's default pragmas\\
+\bottomrule
+\end{tabularx}
+\takeaway{Live values and prompt-only function definitions stay in the session.}
+\note{About two minutes. This is often the most important practical distinction. SAVE serializes the numbered source, not the screen or runtime. EXPORT adds default pragmas but cannot invent missing function definitions, imported code, or initialization. EXPORT does not update the remembered SAVE file or mark the program saved. Other extensions preserve the current format. SAVE remembers an absolute path, so later chdir does not redirect a filename-less SAVE.}
+\end{frame}
+
+\begin{frame}[fragile]{A file round trip}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.48\textwidth}
+\begin{lstlisting}
+SAVE demo.pl
+NEW
+LOAD demo.pl
+LIST
+RESET
+RUN
+(*@\result{9}@*)
+(*@\result{21}@*)
+(*@\result{42}@*)
+\end{lstlisting}
+\end{column}
+\begin{column}{.47\textwidth}
+\cmd{LOAD} reads source without executing it.\par\medskip
+Plain Perl gets numbers 10, 20, 30, \ldots\par\medskip
+\cmd{RESET} gives this run a fresh workspace.\par\medskip
+\cmd{IMPORT} makes an unsaved copy without adopting the filename.
+\end{column}
+\end{columns}
+\captionline{Command acknowledgements omitted. In the system shell, perl demo.pl also prints 9, 21, 42.}
+\note{About two minutes. SAVE before NEW to satisfy the unsaved-source guard. NEW keeps the old live function, which is why RESET is useful here. Then RUN demonstrates that the saved source carries its own definition. Later in the talk distinguish this fresh package from a fresh process. You can run !! perl demo.pl for normal subprocess semantics and return to the app.}
+\end{frame}
+
+\begin{frame}[fragile]{Redefinition follows Perl's rules}
+\begin{lstlisting}
+EVAL sub triple { return 4 * shift; }
+(*@\result{Subroutine triple redefined ...}@*)
+say triple(14)
+(*@\result{56}@*)
+FUNCTIONS
+(*@\result{triple}@*)
+\end{lstlisting}
+\par\vspace{2mm}
+A warning accompanies replacement. Later calls use the new body.\par\medskip
+The saved source still says \cmd{3 * shift}. \cmd{RUN} reinstalls that definition.
+\note{About one minute. No confirmation prompt is required for redefinition. The warning text here is abbreviated because source line details depend on the submission. A previously held code reference still points to the old body; the appendix has an example. Deleting or modifying the stored definition does not remove or change the live one until an evaluation changes it. Use RESET to move to a fresh workspace.}
+\end{frame}
+
+\begin{frame}[fragile]{Code around the sub runs once per submission}
+\begin{lstlisting}[style=perl]
+EVAL do {
+    $setups++;
+    sub twice { return 2 * shift; }
+    say "Setup $setups";
+}
+EVAL say twice(21)
+\end{lstlisting}
+\captionline{First entry prints Setup 1. The next entry prints 42 without running setup again.}
+\takeaway{The sub remains callable after the surrounding code finishes.}
+\note{About one minute. Named subroutines install during compilation. Top-level code executes when the submitted entry runs. Submitting this group again increments setups again and normally warns about the redefinition. A later runtime exception does not undo a compiled sub or earlier side effects. For safety, avoid teaching this as an atomic transaction.}
+\end{frame}
+
+\begin{frame}[fragile]{The process environment is editable}
+\begin{lstlisting}
+ENV SET EXAMPLE_COLOR blue
+ENV EXAMPLE_COLOR
+(*@\result{EXAMPLE\_COLOR=blue}@*)
+ENV SAVE session.env
+ENV SET EXAMPLE_COLOR red
+ENV RELOAD
+ENV EXAMPLE_COLOR
+(*@\result{EXAMPLE\_COLOR=blue}@*)
+\end{lstlisting}
+\captionline{Save/load acknowledgements omitted. EDIT ENV uses familiar VAR=value text.}
+\takeaway{ENV LOAD and RELOAD replace the whole environment.}
+\note{About two minutes. Use the harmless demonstration variable. ENV SAVE snapshots the whole environment, so the resulting file may include credentials; keep it out of version control and the projected demonstration. ENV RELOAD remembers the last saved or loaded file. ENV UNSET removes one variable; setting an empty string differs from unsetting. EDIT ENV changes process memory only until ENV SAVE. ENV RESET restores the startup snapshot.}
+\end{frame}
+
+\begin{frame}[fragile]{Shell commands use an explicit escape}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.45\textwidth}
+\kicker{Unix examples}
+\begin{lstlisting}
+! pwd
+! cat demo.pl
+! echo "$EXAMPLE_COLOR"
+!! perl -de 0
+\end{lstlisting}
+\end{column}
+\begin{column}{.5\textwidth}
+\cmd{!} captures a shell command's output.\par\medskip
+\cmd{!!} lends the real terminal to an interactive command.\par\medskip
+\cmd{chdir '/path'} changes AnteREPL's directory. \cmd{! cd} changes only its child shell.
+\end{column}
+\end{columns}
+\captionline{Unix uses /bin/sh. Native Windows uses COMSPEC or cmd.exe, with that shell's syntax.}
+\note{About one minute. Bare pwd and cat are not automatic shell passthrough. This avoids keyword ambiguity. In screen mode single-bang commands have closed stdin and display their captured output when finished. Double bang supports interactive programs; press Enter after the program exits to return to AnteREPL. Future child commands inherit live ENV changes. AnteREPL cannot modify the parent shell or recover new unexported variables from it.}
+\end{frame}
+
+\begin{frame}{Clearing the right state}
+\begin{tabularx}{\textwidth}{@{}P{25mm}YYY@{}}
+\toprule
+\textbf{Command} & \textbf{Screen} & \textbf{Stored source} & \textbf{Workspace}\\
+\midrule
+\cmd{CLS} & Cleared & Kept & Kept\\
+\cmd{NEW} & Kept & Cleared & Kept\\
+\cmd{RESET} & Kept & Kept & Fresh package\\
+\cmd{UNDO} & Kept & Prior source edit & Kept\\
+\bottomrule
+\end{tabularx}
+\par\vspace{3mm}
+All four keep live \cmd{\%ENV}. \cmd{ENV RESET} restores the startup environment.\par\medskip
+\cmd{CLS} keeps the filename, dirty status, AUTO settings, and source undo.
+\note{About two minutes. NEW also forgets the save filename and checks for unsaved source. CLEAR is an alias for NEW, not for CLS. CLS discards retained screen rows, so PageUp cannot bring them back, but LIST can show the program again. RESET switches package; it does not fork a new interpreter or unload modules. UNDO tracks up to 50 source changes and does not restore runtime state, environment, files, or a previous save filename.}
+\end{frame}
+
+\begin{frame}{Recovery during experimentation}
+\begin{tabularx}{\textwidth}{@{}P{43mm}Y@{}}
+\toprule
+\textbf{Situation} & \textbf{Action}\\
+\midrule
+Unfinished input or running Perl & \key{Ctrl-C} cancels or interrupts\\
+Wrong source edit & \cmd{UNDO} restores a prior source version\\
+Leaving with unsaved source & \cmd{SAVE}, or deliberately use \cmd{QUIT!}\\
+Unclear current state & \cmd{STATUS}, \cmd{LIST}, \cmd{FUNCTIONS}\\
+\bottomrule
+\end{tabularx}
+\takeaway{Interrupting or rerunning does not roll back Perl side effects.}
+\captionline{LOAD, IMPORT, NEW/CLEAR, and QUIT/EXIT guard unsaved source. Their ! suffix deliberately bypasses that guard.}
+\note{About one minute. A file write, environment mutation, or external action already performed can remain after a failure or interrupt. Editing output in place should not suggest undoing those effects. SAVE and EXPORT replace their destination. There is no automatic crash recovery. Commands with a force suffix are an explicit small set; RUN! and RESET! are not commands.}
+\end{frame}
+
+\begin{frame}{Tutorial checkpoint}
+\large
+After saving the self-contained program:\par\vspace{4mm}
+\normalsize
+1. Run \cmd{CLS}. Can \cmd{LIST} still show the source?\par\medskip
+2. Run \cmd{RESET}. What does \cmd{FUNCTIONS} show?\par\medskip
+3. Run \cmd{RUN}. Which function becomes available again?\par\medskip
+4. Define a new sub with \cmd{EVAL}. Will \cmd{SAVE} include it?
+\takeaway{Explain each answer using the screen, source, and workspace.}
+\note{Two-minute audience exercise or a checkpoint before Q and A. Answers: (1) yes, source is retained; (2) no functions in the new workspace; (3) triple, installed by the stored source, and output is 9/21/42; (4) no, only numbered source is saved. If time is short, ask only questions two and four. The notes and demo guide supply a full rehearsal sequence.}
+\end{frame}

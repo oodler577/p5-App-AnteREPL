@@ -1,0 +1,59 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{ante-theme}[2026/11/17 AnteREPL talk theme]
+\definecolor{Ink}{HTML}{192237}
+\definecolor{Paper}{HTML}{FAFAF7}
+\definecolor{Muted}{HTML}{566279}
+\definecolor{Purple}{HTML}{5853A6}
+\definecolor{Lavender}{HTML}{C9C6FF}
+\definecolor{Teal}{HTML}{00766F}
+\definecolor{Terminal}{HTML}{20253F}
+\definecolor{TerminalText}{HTML}{F3F2FF}
+\definecolor{Result}{HTML}{A8DFCE}
+\definecolor{Rule}{HTML}{D9DDE4}
+\definecolor{CodePaper}{HTML}{EEF0F5}
+\setbeamercolor{normal text}{fg=Ink,bg=Paper}
+\setbeamercolor{structure}{fg=Purple}
+\setbeamercolor{alerted text}{fg=Teal}
+\setbeamercolor{frametitle}{fg=Ink,bg=Paper}
+\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+\setbeamerfont{normal text}{size=\normalsize}
+\setbeamersize{text margin left=9mm,text margin right=9mm}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\color{Purple}\small\textbullet}
+\setbeamertemplate{itemize subitem}{\color{Purple}\tiny\textbullet}
+\setbeamertemplate{frametitle}{\vspace{3mm}\insertframetitle\par\vspace{1mm}}
+\newcommand{\decksection}{Tutorial}
+\setbeamertemplate{footline}{%
+  \hspace{9mm}\textcolor{Muted}{\tiny AnteREPL\hspace{2mm}/\hspace{2mm}\decksection}%
+  \hfill\textcolor{Muted}{\tiny\insertframenumber}\hspace{9mm}\vspace{3mm}}
+\setbeamertemplate{note page}[plain]
+\setbeamercolor{note page}{fg=Ink,bg=white}
+\setbeamercolor{note title}{fg=Ink,bg=CodePaper}
+\setbeamerfont{note page}{size=\small}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\cmd}[1]{\textcolor{Purple}{\texttt{#1}}}
+\newcommand{\key}[1]{{\sffamily\bfseries\color{Purple}#1}}
+\newcommand{\captionline}[1]{\par\vspace{1.5mm}{\footnotesize\color{Muted}#1}\par}
+\newcommand{\takeaway}[1]{\par\vspace{3mm}{\color{Teal}\bfseries #1}\par}
+\newcommand{\kicker}[1]{{\small\color{Muted}\MakeUppercase{#1}}\par\vspace{2mm}}
+\newcommand{\result}[1]{{\color{Result}#1}}
+\newcommand{\hint}[1]{{\color{Lavender}#1}}
+\lstdefinestyle{terminal}{
+ language={},basicstyle=\ttfamily\small\color{TerminalText},
+ backgroundcolor=\color{Terminal},columns=fullflexible,keepspaces=true,
+ showstringspaces=false,showspaces=false,showtabs=false,
+ upquote=true,breaklines=false,tabsize=4,
+ frame=single,rulecolor=\color{Terminal},framerule=0pt,framesep=3mm,
+ xleftmargin=3mm,xrightmargin=3mm,aboveskip=2mm,belowskip=2mm,
+ escapeinside={(*@}{@*)},
+ keywordstyle={},commentstyle={},stringstyle={}}
+\lstdefinestyle{perl}{style=terminal,language=Perl,
+ keywordstyle=\color{Lavender},commentstyle=\color{Result},stringstyle=\color{TerminalText}}
+\lstdefinestyle{smallterminal}{style=terminal,basicstyle=\ttfamily\footnotesize\color{TerminalText}}
+\lstset{style=terminal}
+\newcommand{\sourcehint}[1]{\note{Source: #1}}
+
+\pdfstringdefDisableCommands{\def\translate#1{#1}}

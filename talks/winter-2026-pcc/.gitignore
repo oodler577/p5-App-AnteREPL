@@ -1,0 +1,17 @@
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+main.pdf
+notes.pdf
+session.env
+demo.pl
+demo.bperl
+
+!demo/portable.pl

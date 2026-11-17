@@ -1,0 +1,136 @@
+\renewcommand{\decksection}{Implementation}
+
+\begin{frame}{What happens when you press Enter}
+\begin{tabularx}{\textwidth}{@{}P{37mm}Y@{}}
+\toprule
+\textbf{Input form} & \textbf{Route}\\
+\midrule
+\cmd{10 source} & Update the numbered source map\\
+Command or shell escape & Dispatch the operation\\
+\cmd{EVAL code}, \cmd{? expr} & Evaluate immediately in the workspace\\
+Ordinary code, AUTO on & Store a completed entry as source\\
+Ordinary code, AUTO off & Evaluate immediately in the workspace\\
+\bottomrule
+\end{tabularx}
+\captionline{Screen mode first assembles the row or multiline group. Commands and editing numbers have their own input grammar.}
+\note{About two minutes. The real dispatcher recognizes compact LIST ranges, numbered/literal entries, DUMP/PEEK, question-mark expressions, and shell escapes before the general commands and AUTO fallback. This table conveys the routes rather than every regex ordering detail. The implementation never compiles code just to decide whether it needs continuation. Recognizing leading numbers means 10 + 20 is source-entry syntax; ? 10 + 20 disambiguates an expression.}
+\end{frame}
+
+\begin{frame}{A small implementation with separate jobs}
+\begin{tabularx}{\textwidth}{@{}P{42mm}Y@{}}
+\toprule
+\textbf{Component} & \textbf{Responsibility}\\
+\midrule
+\cmd{script/anterepl} & Thin executable wrapper\\
+\cmd{App::AnteREPL} & Source map, commands, files, environment, HELP\\
+\cmd{Screen} & ANSI display, cursor, entry groups, output placement\\
+\cmd{ScreenInput/Output} & Tied handles connecting ordinary Perl I/O to the screen\\
+\cmd{Evaluator} & String eval in a session workspace package\\
+\bottomrule
+\end{tabularx}
+\captionline{The classes live in lib/App/AnteREPL.pm. Workspace packages have names such as App::AnteREPL::Workspace::S1.}
+\note{About two minutes. Source is a hash keyed by editing number. RUN joins it in numeric order and evaluates it once, not line by line. Evaluator is a separate package to keep implementation lexical variables out of the submitted code's lexical scope. It is not a sandbox or security boundary. Command handling, screen editing, and evaluation are different responsibilities even though they share one module file.}
+\end{frame}
+
+\begin{frame}{The display tracks entries and their output}
+\begin{tabularx}{\textwidth}{@{}P{35mm}Y@{}}
+\toprule
+\textbf{Action} & \textbf{Display behavior}\\
+\midrule
+Submit an earlier entry & Replace its owned output immediately below it\\
+New result is shorter & Remove leftover output rows\\
+New result is silent & Remove that entry's old output entirely\\
+Submit inside a group & Execute the group; put output after its final row\\
+Later entries exist & Keep those entries and their output in order\\
+\bottomrule
+\end{tabularx}
+\takeaway{The screen remembers where a result belongs, not just its text.}
+\note{About two minutes. This explains why a shell-style command history alone would not meet the desired interaction. Entry identity and output ownership matter when lengths change. The recent fix removed an unintended spacer before a following entry. Intentional blank lines emitted by Perl remain. The cursor follows the new output, possibly onto the next existing entry, and Esc starts fresh input. Avoid promising arbitrary terminal-emulator behavior.}
+\end{frame}
+
+\begin{frame}{Perl evaluation boundaries}
+\begin{tabularx}{\textwidth}{@{}P{40mm}Y@{}}
+\toprule
+\textbf{Boundary} & \textbf{Consequence}\\
+\midrule
+One entry is one eval & Lexicals and pragmas belong to that evaluation\\
+One RUN is one eval & Lexicals can span all stored source lines\\
+Workspace package persists & Package variables, named subs, and imports can survive\\
+RESET selects a new package & Process environment and loaded modules still exist\\
+\bottomrule
+\end{tabularx}
+\captionline{RUN uses string eval in the running interpreter. It is not a new invocation of perl filename.pl.}
+\note{About two minutes for a Perl audience. The evaluator invokes eval in scalar context, so ? intentionally displays a scalar result. Default strict refs/subs, no strict vars, say, and warnings are lexical policy around the eval; a submission can change its own pragma scope. Module imports that install package names can persist, whereas lexical effects do not automatically carry to later entries. RESET does not erase old packages or restart the process; it selects a new current workspace.}
+\end{frame}
+
+\begin{frame}{Terminal support and current limits}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.47\textwidth}
+\kicker{Screen mode}
+Editable retained rows, grouped input, controlled LIST output.\par\medskip
+ANSI terminal plus Term::ReadKey or Unix POSIX input.
+\end{column}
+\begin{column}{.47\textwidth}
+\kicker{Plain mode}
+Source, file, environment, and evaluation commands remain.\par\medskip
+No navigation through earlier output or LIST pause controls.
+\end{column}
+\end{columns}
+\par\vspace{4mm}
+5,000 retained rows. Long rows scroll sideways.\par\medskip
+Wide or combining glyphs can misalign. Native Windows still needs testing.
+\note{About one minute. Simple print, say, warn, and STDIN line input work with the screen. Arbitrary terminal controls, direct system/exec, and native XS output can bypass it; use the supported shell handoff and PEEK command where applicable. Shift+Enter depends on a distinct terminal key sequence; Ctrl-N is the dependable alternative in screen mode. Piped input selects plain mode. Do not present the terminal as universally validated.}
+\end{frame}
+
+\begin{frame}{A deliberately small CPAN distribution}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.48\textwidth}
+\kicker{Install and run}
+\cmd{App::AnteREPL}\par\medskip
+One executable: \cmd{anterepl}\par\medskip
+\cmd{Makefile.PL} works without Dist::Zilla.
+\end{column}
+\begin{column}{.47\textwidth}
+\kicker{Maintain and release}
+\cmd{dist.ini} selects release files explicitly.\par\medskip
+\cmd{dzil test} and \cmd{dzil build}\par\medskip
+Talks, wiki checkout, terminal recordings, and developer helpers stay out.
+\end{column}
+\end{columns}
+\captionline{Distribution version 0.01; banner/file-format version 0.1. The version numbers serve different purposes.}
+\note{About one minute. The explicit GatherFile list ships the runtime, script, tests, installer, README, Changes, license, and dist.ini; metadata and manifest are generated. Unix runtime can use core modules, with Term::ReadKey recommended; native Windows requires it. IO::Pty belongs only to the optional developer terminal harness. No claim of an already published CPAN version is needed: this talk documents the repository implementation.}
+\end{frame}
+
+\begin{frame}{Automated checks and human UX testing}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.47\textwidth}
+\kicker{Automated checks}
+Source edits and semicolons.\par\medskip
+Command behavior and screen rows.\par\medskip
+PTY sessions, editor round trips, interrupts, terminal restoration.
+\end{column}
+\begin{column}{.47\textwidth}
+\kicker{Human checks}
+Does the cursor land where expected?\par\medskip
+Does rerun preserve later work?\par\medskip
+Do multiline editing and terminal keys feel natural?
+\end{column}
+\end{columns}
+\takeaway{Current status: working implementation, with UX testing continuing.}
+\note{About one minute. Tests are prove -lr t and the optional Perl tools/terminal-smoke.pl harness using IO::Pty and vi on Unix. The implementation snapshot preceding this deck had 437 assertions across five test files passing on the DC VM, plus the real terminal checks. That is a dated observation, not a promise about every terminal. Human testing already exposed the inserted spacer and desired Left navigation. Recheck exact counts before presenting; the talk deliberately avoids freezing the count on the slide.}
+\end{frame}
+
+\renewcommand{\decksection}{Discussion}
+\begin{frame}{A useful place to experiment with Perl}
+\large
+Try an expression. Keep a short program. Inspect the live process.\par
+\par\vspace{5mm}
+\normalsize
+The screen makes earlier work editable.\par\medskip
+The numbered source makes a program easy to revisit.\par\medskip
+The workspace keeps values and functions available between evaluations.
+\par\vspace{5mm}
+\href{https://github.com/oodler577/p5-App-AnteREPL}{\textbf{github.com/oodler577/p5-App-AnteREPL}}\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/wiki}{User guide and command reference}\hfill\cmd{HELP}\hspace{3mm}\cmd{perldoc App::AnteREPL}
+\note{Close the main talk here, about one minute, and invite questions. Suggested discussion: which kinds of short experiments would people keep as source, which should remain session-only, and which terminal behaviors would make this practical for them? The reference slides follow for questions or a longer workshop. Do not walk through every appendix slide in a 45-minute slot.}
+\end{frame}

@@ -1,0 +1,26 @@
+% Overleaf: select main.tex as Main document, compiler pdfLaTeX.
+% Compile notes.tex for slides with speaker notes beside them.
+\documentclass[aspectratio=169,11pt]{beamer}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{listings,booktabs,array,tabularx}
+\usepackage{ante-theme}
+\ifdefined\SpeakerNotes
+  \setbeameroption{show notes on second screen=right}
+\else
+  \setbeameroption{hide notes}
+\fi
+\title{AnteREPL}
+\subtitle{Perl at the BASIC prompt}
+\author{Brett Estrade}
+\date{Winter 2026 PCC \textemdash{} talk draft}
+\hypersetup{pdftitle={AnteREPL: Perl at the BASIC prompt},pdfauthor={Brett Estrade},pdfsubject={Tutorial and implementation overview of App::AnteREPL},pdfkeywords={Perl, AnteREPL, REPL, BASIC, C64}}
+\begin{document}
+\input{slides/tutorial}
+\input{slides/overview}
+\appendix
+\renewcommand{\decksection}{Reference}
+\renewcommand{\arraystretch}{1.0}
+\input{slides/reference}
+\end{document}

@@ -83,3 +83,9 @@ See [CONTRIBUTING.md](https://github.com/oodler577/p5-App-AnteREPL/blob/main/CON
 for release contents and optional terminal checks.
 
 Copyright (c) 2026 Brett Estrade. Licensed under the same terms as Perl itself.
+
+## Talk material
+
+The [Winter 2026 PCC talk draft](https://github.com/oodler577/p5-App-AnteREPL/tree/main/talks/winter-2026-pcc) includes an
+editable Beamer tutorial and overview, speaker notes, a rendered PDF, and
+rehearsal examples. Presentation files are excluded from the CPAN distribution.
