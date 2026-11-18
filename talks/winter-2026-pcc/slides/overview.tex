@@ -41,7 +41,7 @@ Submit an earlier entry & Replace its owned output immediately below it\\
 New result is shorter & Remove leftover output rows\\
 New result is silent & Remove that entry's old output entirely\\
 Submit inside a group & Execute the group; put output after its final row\\
-Later entries exist & Keep those entries and their output in order\\
+Later entries exist & Keep their order while they fit on screen\\
 \bottomrule
 \end{tabularx}
 \takeaway{The screen remembers where a result belongs, not just its text.}
@@ -67,7 +67,7 @@ RESET selects a new package & Process environment and loaded modules still exist
 \begin{columns}[T,onlytextwidth]
 \begin{column}{.47\textwidth}
 \kicker{Screen mode}
-Editable retained rows, grouped input, controlled LIST output.\par\medskip
+Visible cells, grouped input, controlled LIST output.\par\medskip
 ANSI terminal plus Term::ReadKey or Unix POSIX input.
 \end{column}
 \begin{column}{.47\textwidth}
@@ -77,7 +77,7 @@ No navigation through earlier output or LIST pause controls.
 \end{column}
 \end{columns}
 \par\vspace{4mm}
-5,000 retained rows. Long rows scroll sideways.\par\medskip
+Terminal-sized screen. Wrapped lines. Explicit resize recovery.\par\medskip
 Wide or combining glyphs can misalign. Native Windows still needs testing.
 \note{About one minute. Simple print, say, warn, and STDIN line input work with the screen. Arbitrary terminal controls, direct system/exec, and native XS output can bypass it; use the supported shell handoff and PEEK command where applicable. Shift+Enter depends on a distinct terminal key sequence; Ctrl-N is the dependable alternative in screen mode. Piped input selects plain mode. Do not present the terminal as universally validated.}
 \end{frame}
@@ -117,7 +117,7 @@ Do multiline editing and terminal keys feel natural?
 \end{column}
 \end{columns}
 \takeaway{Current status: working implementation, with UX testing continuing.}
-\note{About one minute. Tests are prove -lr t and the optional Perl tools/terminal-smoke.pl harness using IO::Pty and vi on Unix. The implementation snapshot preceding this deck had 662 assertions across six test files passing on the DC VM, plus the real terminal checks. That is a dated observation, not a promise about every terminal. Human testing already exposed the inserted spacer and desired Left navigation. Recheck exact counts before presenting; the talk deliberately avoids freezing the count on the slide.}
+\note{About one minute. Tests are prove -lr t and the optional Perl tools/terminal-smoke.pl harness using IO::Pty and vi on Unix. The implementation snapshot preceding this deck had 736 assertions across seven test files passing on the DC VM, plus the real terminal checks. That is a dated observation, not a promise about every terminal. Human testing already exposed the inserted spacer and desired Left navigation. Recheck exact counts before presenting; the talk deliberately avoids freezing the count on the slide.}
 \end{frame}
 
 \renewcommand{\decksection}{Discussion}

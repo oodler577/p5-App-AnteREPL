@@ -13,7 +13,7 @@
 {\color{TerminalText}\large Brett Estrade}\par
 \par\vspace{2mm}
 {\color{Lavender}\small Winter 2026 PCC \textemdash{} talk draft}
-\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit b2d147d from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
+\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit f0dbd0e from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
 \end{frame}
 }
 
@@ -44,16 +44,18 @@ Move back into the screen and edit it.
 \toprule
 \textbf{State} & \textbf{What it contains} & \textbf{How you inspect it}\\
 \midrule
-Screen & Editable input and output & Cursor keys, PageUp\\
-Stored program\newline (``VRAM'') & Source indexed by editing numbers & \cmd{LIST}, \cmd{EDIT}\\
+Screen (``VRAM'') & Visible editable cells only & Cursor keys, \cmd{RECOVER}\\
+Stored program & Source indexed by editing numbers & \cmd{LIST}, \cmd{EDIT}\\
 Perl workspace & Live package variables and functions & \cmd{?}, \cmd{DUMP}, \cmd{FUNCTIONS}\\
 \bottomrule
 \end{tabularx}
 \par\vspace{3mm}
 \cmd{RUN} executes stored source in the live workspace.\par\medskip
 \cmd{SAVE} writes stored source to a file.
-\note{Spend two minutes here; this is the central model. The word VRAM is a user-facing metaphor for the in-memory program, not emulated hardware memory. Displayed source, stored source, and a compiled live subroutine can differ. The process environment is another piece of process state, covered later. Return to this model whenever SAVE or RESET seems surprising.}
+\note{Spend two minutes here; this is the central model. VRAM means the visible working screen. The numbered program is a separate notebook and the workspace holds live values. Displayed source, stored source, and a compiled live subroutine can differ. A resize bank is an inactive copy of the screen, not extra active rows. Return to this model whenever SAVE, RECOVER, or RESET seems surprising.}
 \end{frame}
+
+\input{slides/screen-model}
 
 \begin{frame}[fragile]{Installation and a fresh session}
 \kicker{In your system shell}
@@ -166,8 +168,8 @@ say "keep this line below"
 \end{columns}
 \par\vspace{2mm}
 Insert editing is the default. Enter replaces that entry's previous output.\par\medskip
-Later entries stay intact. \key{Esc} returns to fresh input at the bottom.
-\note{Two-minute live demonstration and an important UX checkpoint. Type say triple(14), then the keep-this-line statement. Move up, replace 14 with 13, and submit. There should be no extra blank spacer before the later command. Output replacement is display behavior only: rerunning still repeats Perl side effects. Left at the beginning of a row now moves to the previous row's end, stopping at the oldest retained row. This behavior was added following human testing.}
+Later entries stay intact while they fit. \key{Esc} goes to fresh input.
+\note{Two-minute live demonstration and an important UX checkpoint. Type say triple(14), then the keep-this-line statement. Move up, replace 14 with 13, and submit. There should be no extra blank spacer before the later command. Output replacement is display behavior only: rerunning still repeats Perl side effects. Left at the beginning of a row now moves to the previous row's end, stopping at the visible top row. This behavior was added following human testing.}
 \end{frame}
 
 \begin{frame}[fragile]{Several blocks, one immediate evaluation}
@@ -404,7 +406,7 @@ ENV EXAMPLE_COLOR
 \par\vspace{3mm}
 All four keep live \cmd{\%ENV}. \cmd{ENV RESET} restores the startup environment.\par\medskip
 \cmd{CLS} keeps the filename, dirty status, AUTO settings, and source undo.
-\note{About two minutes. NEW also forgets the save filename and checks for unsaved source. CLEAR is an alias for NEW, not for CLS. CLS discards retained screen rows, so PageUp cannot bring them back, but LIST can show the program again. RESET switches package; it does not fork a new interpreter or unload modules. UNDO tracks up to 50 source changes and does not restore runtime state, environment, files, or a previous save filename.}
+\note{About two minutes. NEW also forgets the save filename and checks for unsaved source. CLEAR is an alias for NEW, not for CLS. CLS clears the active screen and resize bank, but LIST can show the program again. RESET switches package; it does not fork a new interpreter or unload modules. UNDO tracks up to 50 source changes and does not restore runtime state, environment, files, or a previous save filename.}
 \end{frame}
 
 \begin{frame}{Recovery during experimentation}

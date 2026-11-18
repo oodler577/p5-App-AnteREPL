@@ -137,14 +137,14 @@ Arrows; Left at row start & Traverse screen; Left crosses to previous row's end\
 Enter & Submit selected row or its complete multiline group\\
 Ctrl-N / Shift+Enter & Insert newline without submitting; Shift+Enter needs terminal support\\
 Insert; Backspace / Delete & Toggle insert/overwrite; remove characters\\
-Home / End; PageUp / PageDown & Row ends; traverse retained screen rows\\
-Esc / Ctrl-End; Ctrl-Home & Fresh bottom row; oldest retained row\\
+Home / End; PageUp / PageDown & Row ends; move within visible rows\\
+Esc / Ctrl-End; Ctrl-Home & Fresh bottom row; visible top row\\
 Ctrl-U / Ctrl-L & Clear row / redraw screen\\
 Tab & Spaces to next four-column tab stop\\
 Ctrl-C / Ctrl-D & Cancel or interrupt / end AUTO, otherwise guarded exit\\
 \bottomrule
 \end{tabularx}
-\note{Reference only. Default editing mode is insert. Left stops at the oldest retained row and visits empty rows one by one. Right currently stops at the end of its row. Shift+Enter is recognized as CSI-u ESC [ 13 ; 2 u or xterm ESC [ 27 ; 2 ; 13 tilde, without the spaces. No app can distinguish Shift+Enter when the terminal sends ordinary Enter for both. Ctrl-N is the fallback. Input to a running program has its own editing boundary.}
+\note{Reference only. Default editing mode is insert. Left stops at the visible top row and visits empty rows one by one. Wrapped pieces are linked without adding source newlines. Shift+Enter is recognized as CSI-u ESC [ 13 ; 2 u or xterm ESC [ 27 ; 2 ; 13 tilde, without the spaces. No app can distinguish Shift+Enter when the terminal sends ordinary Enter for both. Ctrl-N is the fallback. Input to a running program has its own editing boundary.}
 \end{frame}
 
 \begin{frame}[fragile]{Reference: functions and old code references}
@@ -174,7 +174,7 @@ say triple(14)
 \cmd{--help}, \cmd{-h}, \cmd{--version} & Print HELP or application version and exit\\
 \cmd{-- -example.pl} & Accept startup filename beginning with a hyphen\\
 \cmd{! command}, \cmd{!! command} & Captured shell output; interactive terminal handoff\\
-\cmd{HELP} & Complete built-in reference\\
+\cmd{HELP} & Complete reference; pauses by screenful in screen mode\\
 \cmd{QUIT}, \cmd{EXIT} & Exit unless source is unsaved; add ! to discard it\\
 \bottomrule
 \end{tabularx}
@@ -195,14 +195,15 @@ For stored inspection code, call \cmd{Data::Dumper::Dumper} or \cmd{Devel::Peek:
 
 \begin{frame}{Sources and version of this talk}
 \small
-Implementation snapshot: \cmd{b2d147d81131} \textemdash{} November 18, 2026.\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
+Implementation snapshot: \cmd{f0dbd0ed1238} \textemdash{} November 18, 2026.\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
 \href{https://github.com/oodler577/p5-App-AnteREPL/wiki}{\textbf{User guide and workflow documentation}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/tree/b2d147d811316d16be04a002da2acd942d2e9245/t}{\textbf{Unit and screen tests}}\hspace{5mm}
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
+\href{https://github.com/oodler577/p5-App-AnteREPL/tree/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/t}{\textbf{Unit and screen tests}}\hspace{5mm}
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
+\captionline{Historical model: \href{https://www.homecomputermuseum.nl/wp-content/uploads/2020/04/Commodore-64_Users-Guide-1982.pdf}{Commodore 64 User's Guide} and \href{https://www.lost-manuals.com/pdf/commodore--c64--user--ID9153.pdf}{Programmer's Reference Guide}.}
 \par\vspace{4mm}
 This deck documents an implementation under active UX testing.\par
 The included README explains rehearsal, shorter routes, and Overleaf editing.
-\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot f0333bd documents the same uppercase commands and fresh-line exits. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
+\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot dbe96c7 documents the same screen bounds and explicit resize recovery. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
 \end{frame}

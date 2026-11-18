@@ -10,7 +10,31 @@ input so the command blocks can be copied without copying output.
 The opening example on slide 2 is a separate illustration; do not enter it
 into the continuous tutorial session.
 
-## 1. Immediate values and data (slides 5–7)
+## Screen size demonstration (slides 4–6; separate session)
+
+Start with an 80-column by 24-row terminal and a fresh `anterepl`:
+
+```text
+CLS
+10 say "stored program"
+$runs = 0; say ++$runs
+say "wide:" . ("x" x 60)
+say "row:$_" for 1..12
+```
+
+Shrink to roughly 40 by 12 without typing. The warning names the dimensions
+needed for `RECOVER`. Try it while small: it must refuse. Grow to 80 by 24;
+the wide line and lost rows must **not** return automatically. Type `RECOVER`:
+the saved screen replaces the current one, without executing anything.
+`? $runs` must still show 1 and `RUN` must print `stored program`.
+
+Repeat with several shrink events before growing. The first unclaimed copy
+must survive. On another shrink, use `CLS` before growing: `RECOVER` must now
+report that no saved screen exists. Use `QUIT!`, then start a fresh session
+for the tutorial below. PageUp only navigates visible rows; ordinary scrolling
+does not make a bank. `HELP` pauses by screenful.
+
+## 1. Immediate values and data (slides 8–10)
 
 ```perl
 $n = 14
@@ -30,7 +54,7 @@ Dumper shows the structure; Peek output varies with Perl and runtime state.
 The slides also show `DUMP \%ENV` as syntax; do not project a real environment
 that may contain secrets.
 
-## 2. Session function and screen editing (slides 8–10)
+## 2. Session function and screen editing (slides 11–13)
 
 ```perl
 EVAL sub triple {
@@ -71,7 +95,7 @@ line, such as `say "done";` after the loop. Enter from any row in the complete
 group reruns the group. Shift+Enter works only if the terminal distinguishes
 it; Ctrl-N is the fallback. No source is added to LIST.
 
-## 3. Numbered source and AUTO (slides 11–13)
+## 3. Numbered source and AUTO (slides 14–16)
 
 ```text
 10 say triple(14)
@@ -93,7 +117,7 @@ open and stored lines remain.
 Move into a LIST row, edit its Perl, and press Enter. Then RUN to confirm that
 the stored source changed. Use UNDO if desired. LIST ranges include endpoints.
 
-## 4. EDIT and a portable file (slides 14–17)
+## 4. EDIT and a portable file (slides 17–20)
 
 Choose an installed editor, for example:
 
@@ -139,7 +163,7 @@ perl demo.pl
 Or use `!! perl demo.pl` inside AnteREPL for a separate process with normal
 terminal I/O. Press Enter after it exits to return.
 
-## 5. Function lifetime (slides 18–19)
+## 5. Function lifetime (slides 21–22)
 
 ```perl
 EVAL sub triple { return 4 * shift; }
@@ -163,7 +187,7 @@ Expect `Setup 1`, then `42`. Reexecuting the first group increments `$setups`
 again and may warn about redefining twice. Calling twice alone does not rerun
 the setup. SAVE does not include the session-only definition of twice.
 
-## 6. Environment and shell (slides 20–21)
+## 6. Environment and shell (slides 23–24)
 
 ```text
 ENV SET EXAMPLE_COLOR blue
@@ -191,7 +215,7 @@ The echo prints `blue`. On native Windows, use commands and variable expansion
 for cmd.exe, for example `! echo %EXAMPLE_COLOR%`. Use Perl `chdir` for persistent
 working-directory changes; a child-shell `! cd` does not change AnteREPL.
 
-## 7. State checkpoint (slides 22–24)
+## 7. State checkpoint (slides 25–27)
 
 ```text
 CLS

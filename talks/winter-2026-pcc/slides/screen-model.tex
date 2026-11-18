@@ -1,0 +1,73 @@
+\begin{frame}{The screen is the work area}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.46\textwidth}
+\kicker{C64 screen editor}
+40 columns by 25 rows.\par\medskip
+Move into displayed text, edit it, press Return to submit it.
+\end{column}
+\begin{column}{.46\textwidth}
+\kicker{AnteREPL}
+Your terminal's columns and rows.\par\medskip
+Visible input and output are editable. There is no invisible scrollback to enter.
+\end{column}
+\end{columns}
+\par\vspace{4mm}
+Output at the bottom scrolls old rows away.\par\medskip
+\cmd{LIST} brings stored source back onto the screen.
+\takeaway{A physical work surface, with a separate program notebook.}
+\captionline{Inspired by Commodore's screen editor. Resizing and recovery are modern additions.}
+\note{About two minutes. This is the reason for the physical constraint, not merely a cosmetic retro banner. The original C64 character display was 40 by 25. Its screen editor reads the edited logical line on Return. AnteREPL takes the visible work surface idea but runs Perl and follows the current terminal size. Source: Commodore 64 User's Guide, screen-memory grid; Programmer's Reference Guide, screen-editor section. Resizing and the recovery bank are modern additions, not C64 hardware emulation.}
+\end{frame}
+
+\begin{frame}{Resize it like a sheet of graph paper}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{.31\textwidth}
+\kicker{1. Original sheet}
+\begin{tikzpicture}[x=4mm,y=4mm]
+\fill[Purple!15] (0,0) rectangle (8,5);
+\draw[step=1,Muted!60,thin] (0,0) grid (8,5);
+\end{tikzpicture}\par\medskip
+8 by 5 cells in this illustration.
+\end{column}
+\begin{column}{.31\textwidth}
+\kicker{2. Smaller}
+\begin{tikzpicture}[x=4mm,y=4mm]
+\path[use as bounding box] (0,0) rectangle (8,5);
+\fill[Teal!18] (0,2) rectangle (5,5);
+\draw[step=1,Muted!60,thin] (0,2) grid (5,5);
+\end{tikzpicture}\par\medskip
+Right and bottom cells are cut off. A warning appears.
+\end{column}
+\begin{column}{.31\textwidth}
+\kicker{3. Bigger again}
+\begin{tikzpicture}[x=4mm,y=4mm]
+\fill[Teal!18] (0,2) rectangle (5,5);
+\draw[step=1,Muted!60,thin] (0,0) grid (8,5);
+\end{tikzpicture}\par\medskip
+New cells are empty. Lost text stays lost.
+\end{column}
+\end{columns}
+\par\vspace{4mm}
+Before shrinking, one copy is put aside in an \textbf{inactive bank}.
+\takeaway{Growing gives more room. It does not undo shrinking.}
+\note{About two minutes. Read this as graph paper: cut away cells, then attach blank paper. The diagram illustrates cell geometry, not a literal 8-column usable terminal. The warning itself occupies cells and can scroll more rows away. The bank contains the screen before the first unclaimed shrink, so dragging the window edge repeatedly does not overwrite it with already-cropped copies. Cursor keys and Enter cannot reach the bank. Ordinary scrolling does not make a bank.}
+\end{frame}
+
+\begin{frame}{Recovery is a separate, explicit choice}
+\begin{tabularx}{\textwidth}{@{}P{40mm}Y@{}}
+\toprule
+\textbf{Action} & \textbf{Result}\\
+\midrule
+Shrink an 80 by 24 screen & Warning; one copy saved aside\\
+Grow back to 80 by 24 & More empty cells; no automatic restoration\\
+Type \cmd{RECOVER} & Saved screen replaces current screen; no code runs\\
+Recover while too small & Refused; required dimensions are shown\\
+Type \cmd{CLS} & Active screen and bank both become empty\\
+\bottomrule
+\end{tabularx}
+\par\vspace{3mm}
+The numbered program and live Perl values are unchanged.\par\medskip
+An entry clipped at the boundary cannot run as partial Perl.
+\captionline{Use EDIT for larger source. HELP pauses by screenful; LIST supports ranges and PAUSE.}
+\note{Demonstrate in a separate fresh session before the main tutorial. Put a wide visible marker on an 80-by-24 screen; shrink to 40 by 12, observe the warning, grow back, and observe that the marker has not returned. RECOVER restores the copy only now. It replaces current screen edits rather than merging them and consumes the bank. CLS also forgets the bank; neither screen nor bank survives exit. Show that a stored line still RUNs and a package variable still has its value. Plain mode has no bank. Start a fresh session for the main tutorial.}
+\end{frame}
