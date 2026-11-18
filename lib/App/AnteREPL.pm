@@ -11,11 +11,37 @@ use File::Spec ();
 use File::Temp ();
 use Text::Balanced qw(extract_quotelike);
 use Text::ParseWords qw(shellwords);
+use App::AnteREPL::Shorthand ();
 
 our $VERSION = '0.01';
 our $PROGRAM_VERSION = '0.1';
 my $next_workspace = 0;
 my $max_line = 999_999_999;
+
+# Exact, uppercase shortcuts only. V groups environment-variable operations.
+my %short_commands = (
+    A => 'AUTO', A0 => 'AUTO OFF', A1 => 'AUTO ECHO ON', A2 => 'AUTO ECHO OFF',
+    C => 'CLS', C1 => 'CD', D => 'DUMP', D1 => 'DEL',
+    E => 'EVAL', E1 => 'EDIT', E2 => 'EXPORT', F => 'FUNCTIONS', H => 'HELP',
+    I => 'IMPORT', L => 'LIST', L1 => 'LOAD', L2 => 'LIST SLOW', L3 => 'LIST PAUSE',
+    N => 'NEW', P => 'PEEK', Q => 'QUIT',
+    R => 'RUN', R1 => 'RENUM', R2 => 'RESET', R3 => 'RECOVER',
+    S => 'SAVE', S1 => 'STATUS', U => 'UNDO',
+    V => 'ENV', V0 => 'ENV RESET', V1 => 'ENV SET', V2 => 'ENV UNSET',
+    V3 => 'ENV EDIT', V4 => 'ENV SAVE', V5 => 'ENV LOAD', V6 => 'ENV RELOAD',
+);
+
+sub _expand_short_command {
+    my ($source) = @_;
+    return $source unless $source =~ /\A(\s*)([A-Z][0-9]*)(!?)(?=\s|\z)/;
+    my ($leading, $short, $force, $end) = ($1, $2, $3, $+[0]);
+    return $source unless exists $short_commands{$short};
+    my ($command, $option) = split / /, $short_commands{$short}, 2;
+    my $tail = substr($source, $end);
+    # LIST's mode follows its optional range; other fixed options precede args.
+    return "$leading$command$force$tail $option" if $short eq 'L2' || $short eq 'L3';
+    return "$leading$command$force" . (defined $option ? " $option" : '') . $tail;
+}
 
 sub new {
     my ($class) = @_;
@@ -99,16 +125,17 @@ sub _command_case_error {
     return $error unless $line =~ /\A\s*([A-Za-z][A-Za-z0-9_]*)(!?)(?=\s|;|\z)/;
     my ($word, $force) = ($1, $2);
     # These spellings belong to Perl even when their use raises an error.
-    return $error if $word =~ /\A(?:chdir|delete|dump|eval|exit|reset)\z/;
+    return $error if App::AnteREPL::Shorthand::perl_keyword($word);
     my $upper = uc $word;
     return $error if $word eq $upper;
-    return $error unless $upper =~ /\A(?:AUTO|ENV|LIST[0-9]*|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL|DUMP|PEEK|CD|CHDIR)\z/;
+    return $error unless exists $short_commands{$upper}
+        || $upper =~ /\A(?:AUTO|ENV|LIST[0-9]*|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL|DUMP|PEEK|CD|CHDIR)\z/;
     {
         no strict 'refs';
         return $error if defined &{ $self->{workspace} . '::' . $word };
     }
     return $error unless $error =~ /\ABareword "\Q$word\E" not allowed while "strict subs" in use at PERL_ANTE_REPL_prompt line [0-9]+\b/;
-    return "REPL commands must be uppercase; use $upper$force.\n";
+    return "REPL commands must be uppercase; try, \"$upper$force\".\n";
 }
 
 sub _input_error {
@@ -563,7 +590,15 @@ sub auto_store {
 sub input_needs_more {
     my ($self, $source) = @_;
     return 0 if $self->{auto} && $source =~ /\A:/;
+    my $more = App::AnteREPL::Shorthand->needs_more($source, sub { $self->_has_function($_[0]) });
+    return $more if defined $more;
     return needs_more($source);
+}
+
+sub _has_function {
+    my ($self, $name) = @_;
+    no strict 'refs';
+    return defined &{ $self->{workspace} . '::' . $name };
 }
 
 sub reset_workspace {
@@ -639,6 +674,7 @@ sub inspect_value {
 
 sub needs_more {
     my ($source) = @_;
+    $source = _expand_short_command($source);
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
     return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|CD|CHDIR)\b/;
@@ -684,10 +720,64 @@ sub help {
     return <<'HELP';
 PERL ANTE REPL V0.1 / App::AnteREPL
 All REPL commands and subcommands must be uppercase, including DUMP and PEEK.
-Lowercase/mixed-case input is ordinary Perl: executed, or stored during AUTO.
+Lowercase keywords/functions remain Perl. Immediate list shorthand is below.
 A bareword error matching a command gives an uppercase spelling hint instead.
 Valid Perl keywords and user functions keep their normal meaning.
 Quote filenames and values containing spaces.
+
+SHORTCUTS (one uppercase letter, optionally followed by a digit)
+  A    AUTO             A0   AUTO OFF
+  A1   AUTO ECHO ON      A2   AUTO ECHO OFF
+  C    CLS              C1   CD / CHDIR
+  D    DUMP             D1   DEL / DELETE
+  E    EVAL             E1   EDIT              E2   EXPORT
+  F    FUNCTIONS        H    HELP              I    IMPORT
+  L    LIST             L1   LOAD
+  L2   LIST SLOW        L3   LIST PAUSE
+  N    NEW / CLEAR      P    PEEK              Q    QUIT / EXIT
+  R    RUN              R1   RENUM / REORDER
+  R2   RESET            R3   RECOVER
+  S    SAVE             S1   STATUS            U    UNDO
+  V    ENV              V0   ENV RESET         V1   ENV SET
+  V2   ENV UNSET        V3   ENV EDIT / EDIT ENV
+  V4   ENV SAVE         V5   ENV LOAD          V6   ENV RELOAD
+
+  Arguments and safeguards are unchanged. Examples: E say "hi", L 5-20,
+  L2 5-20 (LIST 5-20 SLOW), C1 .., V1 NAME "value", S demo.pl, Q!.
+  Only L1!, I!, N!, and Q! accept the force suffix. Space separates arguments:
+  L1 loads a file; L 1 lists line 1. Shortcuts are not expanded inside Perl
+  code or stored source. Full names still work. E also accepts definition tags.
+
+IMMEDIATE DEFINITIONS AND LIST SHORTHAND
+  E s name body         Define a named function, e.g. E s triple return 3 * shift.
+  E a name values       Assign @name. E ar name values assigns an arrayref $name.
+  E h name pairs        Assign %name. E hr name pairs assigns a hashref $name.
+  a one, two, threee    Define @a containing the strings one, two, threee.
+  colors red, blue      Define @colors. settings color => blue defines %settings.
+
+  Definition tags s/a/ar/h/hr are lowercase, only after uppercase E.
+  Names have letters, digits, underscores; no sigil, namespace, or prototype.
+  Data definitions with no values make empty containers. A function needs a body.
+  Commas separate values; => separates each hash key/value. Trailing comma OK.
+  One optional final semicolon is allowed after a data definition.
+  Plain words are quoted exactly; decimal numbers stay numbers; undef is undef.
+  'quoted text', "interpolated text", $scalar, [nested, lists], and
+  {nested => hashes} work. Quote spaces, punctuation, empty text, and leading
+  zeroes: "two words", "red-blue", "", "042". No spelling correction occurs.
+  Parenthesize Perl expressions: (1 + 2), (1..3), ($ENV{HOME}), (\%ENV).
+  They use list context in arrays, scalar context for each hash key/value.
+  Nothing is executed merely to decide how to interpret input.
+
+  Bare destination lists need a top-level comma or => and AUTO off. Perl keywords
+  and existing functions take priority; E a colors red resolves a name collision.
+  During AUTO, use explicit E forms; they execute without storing or ending AUTO.
+  Values/functions persist between entries. LIST/SAVE do not include them.
+  Open quotes/containers continue; Ctrl-N also inserts a line before submission.
+  Functions contain ordinary Perl; redefinition gives the usual warning.
+  E s reserves the spaced form for definitions. EVAL always means literal Perl,
+  including EVAL s /old/new/ and definitions with prototypes or attributes.
+  Ambiguous shorthand is rejected with an explanation. Perl expressions and
+  function bodies retain Perl errors, warnings, and any side effects performed.
 
 ENTERING AND RUNNING PERL
   Perl code             Execute immediately, unless AUTO is active.
@@ -855,6 +945,12 @@ sub dispatch {
     my ($self, $line) = @_;
     $line =~ s/\r?\n\z//;
     return 1 if $line =~ /\A\s*\z/;
+    my $definition = App::AnteREPL::Shorthand->explicit($line);
+    if (defined $definition) {
+        $self->evaluate($definition, 0);
+        return 1;
+    }
+    $line = _expand_short_command($line);
     if ($line =~ /\A\s*LIST(?=[0-9-])(.*?)\s*\z/) {
         $self->list_program($1);
         return 1;
@@ -956,7 +1052,13 @@ sub dispatch {
         }
         return 1;
     }
-    if ($self->{auto}) { $self->auto_store($line); }
+    my $implicit = App::AnteREPL::Shorthand->implicit($line, sub { $self->_has_function($_[0]) });
+    if (defined $implicit) {
+        die "List shorthand is immediate input. Try E a name values or E h name pairs during AUTO, or A0 first.\n"
+            if $self->{auto};
+        $self->evaluate($implicit, 0);
+    }
+    elsif ($self->{auto}) { $self->auto_store($line); }
     else {
         local $@;
         my $ok = eval { $self->evaluate($line, 0); 1 };
@@ -1828,15 +1930,14 @@ All AnteREPL commands and subcommands must be uppercase: C<LIST>, C<AUTO OFF>,
 C<AUTO ECHO ON>, C<ENV SET>, C<EDIT ENV>, C<LIST SLOW>, C<DUMP>, and C<PEEK>.
 Aliases such as C<DELETE>, C<REORDER>, C<CLEAR>, and C<EXIT> follow the same rule.
 
-Lowercase and mixed-case words are ordinary Perl, not command aliases. With
-AUTO off they are evaluated; with AUTO on they are stored as source. Perl's
+Lowercase and mixed-case words are not command aliases. Perl's
 lowercase C<eval> keeps its normal behavior, and a user-defined C<list> function
 can be called normally. If immediate input fails with a bareword error and its
 first word matches a REPL command, the interpreter error is replaced with a
 short spelling hint, for example:
 
     cls
-    REPL commands must be uppercase; use CLS.
+    REPL commands must be uppercase; try, "CLS".
 
 The command is not executed automatically. Valid Perl keywords, including
 C<eval>, C<chdir>, C<delete>, and C<reset>, retain their normal meaning and
@@ -1845,6 +1946,129 @@ explicit C<EVAL> code, and stored source retain normal Perl errors.
 Command arguments retain their case, including filenames, environment names,
 values, and Perl source. C<ENV set> looks up the variable named C<set>;
 C<ENV SET name value> sets a variable.
+
+Immediate definitions and implicit destination lists have the explicit grammar
+under L</SHORTCUTS AND SHORTHAND>. Ordinary Perl remains unchanged in numbered
+source, LOAD, IMPORT, EDIT, and literal EVAL. The lowercase definition tags after
+C<E> are intentionally distinct from uppercase REPL commands.
+
+=head1 SHORTCUTS AND SHORTHAND
+
+Every command has a shortcut with one uppercase letter and at most one digit.
+Full names remain available, and arguments keep the same meaning:
+
+    A   AUTO                 A0  AUTO OFF
+    A1  AUTO ECHO ON         A2  AUTO ECHO OFF
+    C   CLS                  C1  CD / CHDIR
+    D   DUMP                 D1  DEL / DELETE
+    E   EVAL                 E1  EDIT                 E2  EXPORT
+    F   FUNCTIONS            H   HELP                 I   IMPORT
+    L   LIST                 L1  LOAD
+    L2  LIST SLOW            L3  LIST PAUSE
+    N   NEW / CLEAR          P   PEEK                 Q   QUIT / EXIT
+    R   RUN                  R1  RENUM / REORDER
+    R2  RESET                R3  RECOVER
+    S   SAVE                 S1  STATUS               U   UNDO
+    V   ENV                  V0  ENV RESET            V1  ENV SET
+    V2  ENV UNSET            V3  ENV EDIT / EDIT ENV
+    V4  ENV SAVE             V5  ENV LOAD             V6  ENV RELOAD
+
+C<V> groups environment-variable operations. C<L2 5-20> means
+C<LIST 5-20 SLOW>; C<L3 5-20> means C<LIST 5-20 PAUSE>. Separate arguments with
+spaces: C<L1 file.pl> loads, while C<L 1> lists line 1. There is no prefix
+guessing. Only C<L1!>, C<I!>, C<N!>, and C<Q!> bypass unsaved-source guards.
+Existing long aliases share the same shortcut and behavior.
+
+=head2 Explicit immediate definitions
+
+C<E> accepts five lowercase definition tags before its ordinary EVAL behavior:
+
+    E s triple return 3 * shift
+    say triple 14
+    42
+    E a colors red, blue
+    E ar names Ada, "Grace Hopper"
+    E h options color => blue, count => 3
+    E hr record name => Ada, tags => [one, two]
+
+These define a function, C<@colors>, C<$names> as an array reference,
+C<%options>, and C<$record> as a hash reference, respectively. Names are plain
+ASCII identifiers without sigils or namespaces. Omit the values to make an
+empty container, for example C<E ar names>. A function must have a body.
+
+Functions contain ordinary Perl, may recurse, and retain normal redefinition
+warnings. Open braces support multiline bodies. Prototypes, attributes, package
+names, and other advanced declarations belong in literal C<EVAL sub ...>.
+C<E s ...> reserves the spaced spelling for shorthand; C<EVAL s /old/new/>
+always runs a literal Perl substitution. C<E s/old/new/> also remains Perl.
+
+Definitions are immediate and persist in the workspace between evaluations.
+They do not enter LIST or SAVE, including during AUTO; AUTO remains active.
+These are package variables, rather than lexicals limited to one evaluation.
+
+=head2 Named lists with implicit quoting
+
+With AUTO off, an unrecognized lowercase-leading name followed by a top-level
+comma-separated list names an array. An arrow selects a hash:
+
+    a one, two, threee
+    D \@a
+    settings color => blue, count => 3
+    D \%settings
+
+The first entry assigns C<@a = ('one', 'two', 'threee')>. Spelling is preserved.
+A Perl keyword or an existing workspace function always takes priority. If a
+function named C<a> exists, C<a ...> calls it; C<E a a one, two> explicitly
+assigns the array. At least one top-level comma or arrow is required for the
+bare form. C<E a names Ada> handles a one-item list without ambiguity.
+During AUTO, a recognized bare list is rejected with directions to use an
+explicit C<E> definition or leave AUTO. Numbered and file source stay literal.
+
+=head2 The value grammar
+
+Every data form uses the same rules, recursively:
+
+=over 4
+
+=item *
+
+Commas separate items. Hashes require C<< key => value >> for each item. One
+trailing comma and one final statement semicolon are allowed. Missing items
+and mixed pairs/lists are errors.
+
+=item *
+
+A word consisting of letters, digits, and underscores, beginning with a letter
+or underscore, becomes an exact string. The special word C<undef> is Perl undef.
+Simple signed decimal numbers, fractions, and exponents remain numbers.
+
+=item *
+
+Single and double quotes have their ordinary Perl meaning, including escapes
+and interpolation. Quote spaces, punctuation, empty strings, and leading zeroes:
+C<"two words">, C<"red-blue">, C<"">, C<"042">. No spelling correction occurs.
+
+=item *
+
+A simple scalar such as C<$count> refers to its live value. Square brackets
+construct array references; braces construct hash references. Their contents
+follow this same grammar, so C<< [one, {color => blue}] >> needs no word quotes.
+
+=item *
+
+Parentheses mark an explicit Perl expression, for example C<(1 + 2)>, C<(1..3)>,
+C<($ENV{HOME})>, or C<(\%ENV)>. Expressions have list context in arrays and
+scalar context in each hash key/value position. Hash duplicate keys keep the
+last value, as in Perl. Nested array/hash literals cannot be hash keys.
+
+=back
+
+Unquoted punctuation or multiword values are not guessed. An ambiguous entry
+gets a friendly explanation and is rejected before evaluation. Nothing is
+compiled or run to classify input. Once accepted, explicit Perl expressions
+and function bodies execute once with normal warnings/errors and side effects;
+those effects are not rolled back. Literal C<EVAL> is the escape for Perl
+outside this small grammar. Stored programs are never rewritten as shorthand.
 
 =head2 Function calls without parentheses
 

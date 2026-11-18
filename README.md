@@ -29,11 +29,12 @@ program in `$EDITOR`; `EDIT ENV` edits `%ENV` using `VAR=value` lines.
 `CLS` clears the screen and resize bank while keeping the stored program, live Perl
 variables, and `%ENV`. Use `LIST` to display the program again.
 All REPL commands and subcommands are uppercase, including `LIST`, `AUTO OFF`,
-`ENV SET`, `DUMP`, and `PEEK`. Lowercase/mixed-case input is ordinary Perl:
-it executes with AUTO off and is stored with AUTO on. Filenames, environment
+`ENV SET`, `DUMP`, and `PEEK`. Lowercase Perl keywords and defined functions
+retain their meaning; immediate lists follow the shorthand rules below.
+Filenames, environment
 names, values, and Perl code retain their case. `EVAL` executes immediately;
 lowercase `eval` is ordinary Perl.
-A command-like bareword such as `cls` gets a short `use CLS` spelling hint.
+A command-like bareword such as `cls` gets a short `try, "CLS".` spelling hint.
 `CD directory` and `CHDIR directory` change this session's directory; ordinary
 Perl such as `chdir $ENV{HOME}` still works. Ctrl-C cancels or interrupts and
 reminds you how to leave with `QUIT`, `QUIT!`, or Ctrl-D.
@@ -46,6 +47,27 @@ in the current workspace, including imports. Redefining a named subroutine
 replaces it with Perl's usual warning; no confirmation is required.
 Call it as `say triple 14`. Bare calls use Perl's normal precedence and
 prototype rules; parentheses remain available when needed for grouping.
+
+Command shortcuts need one shifted letter: `E` evaluates, `L` lists, `R` runs,
+`C` clears the screen, `H` shows HELP, and `Q` quits. Digits resolve collisions:
+`E1` edits, `L1` loads, `R1` renumbers. Every command and option has a shortcut;
+`H` lists the complete table. Existing long commands still work.
+
+Immediate definitions include:
+
+```text
+E s triple return 3 * shift
+E a colors red, blue
+E ar names Ada, Bob
+E h options color => blue
+E hr record name => Ada
+```
+
+With AUTO off, `a one, two, threee` defines persistent `@a` with
+those exact strings. Words are implicitly quoted only in this small list
+grammar; explicit Perl expressions go in parentheses. Keywords and existing
+functions retain priority over bare destination names. `EVAL` always means
+literal Perl. See [the complete grammar and review checklist](docs/SHORTCUTS-AND-SHORTHAND.md).
 
 ## A screen-sized work area
 

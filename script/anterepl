@@ -45,6 +45,12 @@ and function calls retain Perl semantics, including C<say triple 14> and
 prototype-based calls. Ctrl-C cancels or interrupts, then explains how to
 leave with QUIT, QUIT!, or Ctrl-D.
 
+Every command also has a one-letter or letter/digit shortcut; H shows the table.
+E accepts explicit function and container definitions. Immediate destination
+lists such as C<a one, two> define persistent arrays with quoted words.
+Literal EVAL and stored source retain ordinary Perl syntax. See the module's
+SHORTCUTS AND SHORTHAND section for the complete value grammar and precedence.
+
 See L<App::AnteREPL> for the full command reference and screen controls.
 
 =head1 AUTHOR

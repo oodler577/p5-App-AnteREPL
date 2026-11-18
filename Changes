@@ -49,3 +49,7 @@
        retains ordinary Perl semantics
      - show exit instructions after Ctrl-C and use parenthesis-free function
        calls where appropriate in user examples and human QA/QC exercises
+     - phrase uppercase hints as try, "COMMAND", avoiding Perl's use keyword
+     - add explicit single-letter/digit shortcuts for all command operations
+     - add immediate function/container shorthand and a bounded implicit-word
+       list grammar; retain literal EVAL and normal Perl in stored source

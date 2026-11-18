@@ -167,7 +167,7 @@ sub pump_for {
 }
 
 wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'startup');
-command('cls', 'REPL commands must be uppercase; use CLS.');
+command('cls', 'REPL commands must be uppercase; try, "CLS".');
 check(has_line('*** PERL ANTE REPL V0.1 ***'), 'wrong-case cls cleared the screen');
 check(index($transcript, 'Bareword "cls"') < 0, 'command hint leaked an interpreter diagnostic');
 send_text("\x03");
@@ -475,7 +475,39 @@ send_text("QUIT!\r");
 finish_repl();
 print "PASS: idle resize crops rows/columns, grow stays blank, RECOVER is explicit, and source/workspace survive\n";
 
-for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
+($pty, $pid) = start_repl();
+$selector = IO::Select->new($pty);
+$view = TerminalView->new(16, 80);
+($transcript, $eof, $reaped) = ('', 0, 0);
+wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'shorthand session startup');
+send_text('E s triple return 3 * shift' . "\r");
+command('say triple 14', '42');
+wait_for(sub { $view->{row} == 5 && $view->{col} == 0 }, 'shorthand call ready for input');
+send_text("\e[A\e[A\e[F\x7f3\r");
+wait_for(sub { has_line('say triple 13') && has_line('39') && !has_line('42') }, 'shorthand function call reruns in place');
+send_text("\e[1;5F");
+send_text('a one, two, threee' . "\r");
+command('D \@a', "          'threee'");
+send_text('E hr record name => Ada, tags => [' . "\r");
+wait_for(sub { has_line('E hr record name => Ada, tags => [') }, 'shorthand container continues');
+send_text('one, two]' . "\r");
+command('E say join q{:}, @{$record->{tags}}', 'one:two');
+send_text('E a colors red-blue' . "\r");
+wait_for(sub { has_prefix('Ambiguous shorthand:') }, 'ambiguous shorthand explains the problem');
+command('E say "still usable"', 'still usable');
+command('A', 'AUTO 5, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
+send_text('E ar live one, two' . "\r");
+command('S1', '0 lines; unchanged; no save filename.');
+command('A0', 'AUTO off.');
+send_text("H\r");
+wait_for(sub { has_prefix('HELP paused') }, 'shortcut HELP pauses');
+send_text('q');
+wait_for(sub { !has_prefix('HELP paused') }, 'shortcut HELP returns');
+send_text("Q\r");
+finish_repl();
+print "PASS: shortcuts and shorthand support implicit words, multiline containers, rerunning, AUTO, errors, and exit\n";
+
+for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!') {
     ($pty, $pid) = start_repl();
     $selector = IO::Select->new($pty);
     $view = TerminalView->new(16, 80);
@@ -491,7 +523,7 @@ for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
     check($transcript =~ /\e\[\?1049l\r?\n\z/,
         "$command did not print a newline after restoring the original display");
 }
-print "PASS: QUIT, QUIT!, EXIT, and EXIT! restore the terminal and finish on a fresh line\n";
+print "PASS: full and shortcut exit commands restore the terminal and finish on a fresh line\n";
 
 sub resize_terminal {
     my ($height, $width) = @_;

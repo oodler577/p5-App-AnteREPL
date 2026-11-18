@@ -102,7 +102,7 @@ for my $input ('cls', 'Cls', 'cLs', 'list', 'List', 'help', 'status', 'cd', 'Chd
     my $error;
     { local $SIG{__WARN__} = sub { push @warnings, @_ }; $error = fails { $r->dispatch($input) }; }
     my ($word) = $input =~ /([A-Za-z]+)/;
-    is $error, 'REPL commands must be uppercase; use ' . uc($word) . ".\n", "$input gets a clear spelling hint";
+    is $error, 'REPL commands must be uppercase; try, "' . uc($word) . "\".\n", "$input gets a clear spelling hint";
     is_deeply \@warnings, [], "$input emits no interpreter warnings";
 }
 like fails { $perl->dispatch('clss') }, qr/Bareword "clss"/, 'unknown words retain Perl diagnostics';
