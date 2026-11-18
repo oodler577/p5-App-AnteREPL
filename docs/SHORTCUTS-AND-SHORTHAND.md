@@ -1,7 +1,8 @@
-# Shortcuts and shorthand: review draft
+# Shortcuts and shorthand
 
-This is an unpublished implementation draft. Human grammar and terminal review
-are still pending; no release or main/wiki push is part of this work.
+These features are available from the main branch. Human grammar and terminal
+review continues with the [QA/QC session](HUMAN-QAQC.md). This source update does
+not create a new CPAN release.
 
 ## Perl remains Perl
 
@@ -218,4 +219,4 @@ approval, forced exit, and preserved state. Human grammar/UX review remains pend
 12. In piped input, a destructive shortcut without `!` must fail without
     treating a following `yes` line as approval. Explicit forced forms work.
 
-No new release, main-branch push, or wiki publication is part of this draft.
+For a step-by-step session, follow the [human QA/QC walkthrough](HUMAN-QAQC.md).

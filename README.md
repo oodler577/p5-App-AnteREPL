@@ -74,6 +74,7 @@ q/qq/qw/regex operators work inside marked lists too. Other Perl expressions
 go in parentheses. Replacing existing destinations asks first; `E! = a colors
 green` and `= colors! green, blue` force replacement. Literal EVAL and arbitrary
 Perl retain their usual side effects. See [the complete grammar and review checklist](docs/SHORTCUTS-AND-SHORTHAND.md).
+For a hands-on test session, follow [the human QA/QC walkthrough](docs/HUMAN-QAQC.md).
 
 ## A screen-sized work area
 
