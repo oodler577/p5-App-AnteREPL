@@ -13,7 +13,7 @@
 {\color{TerminalText}\large Brett Estrade}\par
 \par\vspace{2mm}
 {\color{Lavender}\small Winter 2026 PCC \textemdash{} talk draft}
-\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit 6a9c90f from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
+\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit b2d147d from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
 \end{frame}
 }
 
@@ -87,7 +87,7 @@ Package variables survive the next entry.\par\medskip
 \cmd{?} prints a scalar result. Ordinary expression input does not.
 \end{column}
 \end{columns}
-\captionline{Defaults: say enabled; strict subs and refs enabled; strict vars disabled.}
+\captionline{REPL commands and subcommands are uppercase. Perl syntax keeps its usual case.}
 \note{About one minute. Start the continuous tutorial here with AUTO off, as in a fresh session. Omitting a semicolon at the end of an immediate single expression is legal Perl string-eval behavior. The source-storage convenience for semicolons comes later. Our \$n is also fine. A lexical from an earlier evaluation will not be available to the next entry; that next entry can instead address a separate package variable of the same name.}
 \end{frame}
 
@@ -110,8 +110,8 @@ Move within the group to edit it; Enter reevaluates the whole group.
 \begin{column}{.5\textwidth}
 \kicker{Data::Dumper}
 \begin{lstlisting}
-dump $FOO
-dump \%ENV
+DUMP $FOO
+DUMP \%ENV
 ? $FOO->{names}[0]
 (*@\result{\textquotesingle{}Alice\textquotesingle{}}@*)
 \end{lstlisting}
@@ -119,14 +119,14 @@ dump \%ENV
 \begin{column}{.45\textwidth}
 \kicker{Devel::Peek}
 \begin{lstlisting}
-peek $FOO
-peek $FOO, 10
+PEEK $FOO
+PEEK $FOO, 10
 \end{lstlisting}
 See SV types, flags, reference counts, and referenced values.
 \end{column}
 \end{columns}
 \captionline{Use references for whole arrays and hashes. DUMP and PEEK are prompt commands; stored Perl calls the modules explicitly.}
-\note{About one minute. The core guts module is Devel::Peek. Its exact output, addresses, and flags depend on Perl and the value's current state, so do not promise a fixed dump. The optional limit bounds what it traverses or displays. Show dump \$FOO on the projector; avoid displaying a real environment with credentials. dump backslash-percent-ENV is a syntax example, not a required live step. PEEK captures native stderr to place its output in the screen.}
+\note{About one minute. The core guts module is Devel::Peek. Its exact output, addresses, and flags depend on Perl and the value's current state, so do not promise a fixed dump. The optional limit bounds what it traverses or displays. Show DUMP \$FOO on the projector; avoid displaying a real environment with credentials. DUMP backslash-percent-ENV is a syntax example, not a required live step. PEEK captures native stderr to place its output in the screen.}
 \end{frame}
 
 \begin{frame}[fragile]{A function for this session}

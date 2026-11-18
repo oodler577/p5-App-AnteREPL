@@ -1,6 +1,8 @@
 # Rehearsal and workshop session
 
 The main tutorial starts in a **fresh AnteREPL session with AUTO off**.
+REPL commands and subcommands must be uppercase, including DUMP and PEEK.
+Lowercase and mixed-case input follows ordinary Perl and AUTO rules.
 Use a disposable working directory. Commands here run inside AnteREPL unless
 explicitly marked “system shell.” Transcript results appear separately from
 input so the command blocks can be copied without copying output.
@@ -18,14 +20,14 @@ $FOO = {
     bar   => 1,
     names => [qw(Alice Bob)],
 };
-dump $FOO
+DUMP $FOO
 ? $FOO->{names}[0]
-peek $FOO, 10
+PEEK $FOO, 10
 ```
 
 The arithmetic outputs are both `42`. The name query displays `'Alice'`.
 Dumper shows the structure; Peek output varies with Perl and runtime state.
-The slides also show `dump \%ENV` as syntax; do not project a real environment
+The slides also show `DUMP \%ENV` as syntax; do not project a real environment
 that may contain secrets.
 
 ## 2. Session function and screen editing (slides 8–10)

@@ -48,7 +48,7 @@ eval 'say "string eval"';
 Uppercase \cmd{EVAL} is an AnteREPL command.\par\medskip
 Lowercase \cmd{eval} retains Perl's exception-catching and string-eval behavior.\par\medskip
 Read \cmd{\$@} in the same entry; a later REPL evaluation can change it.
-\note{Reference only. Other prompt commands are case insensitive. An uppercase EVAL prefix removes ambiguity when a line begins with an editing number or resembles a command. EVAL does not automatically print an expression's value; use ? for that. These examples are alternatives, not instructions to paste as a single entry while AUTO is active.}
+\note{Reference only. All prompt commands and subcommands must be uppercase. Lowercase or mixed-case input follows ordinary Perl and AUTO rules. An uppercase EVAL prefix removes ambiguity when a line begins with an editing number or resembles a command. EVAL does not automatically print an expression's value; use ? for that. These examples are alternatives, not instructions to paste as a single entry while AUTO is active.}
 \end{frame}
 
 \begin{frame}{Reference: LIST and display controls}
@@ -108,7 +108,7 @@ Other typing or movement & Stop LIST and pass the key to the editor\\
 \bottomrule
 \end{tabularx}
 \captionline{No environment UNDO. Failed parsing or editing leaves the current environment intact.}
-\note{Reference only. These operations affect the running process and future child commands, not the parent shell. Direct assignments and deletes in percent-ENV work too. Subcommand names such as SET are reserved after ENV; inspect a variable with that name using dump \$ENV{SET}. A snapshot may contain secrets; do not commit real snapshots or include them in demo material.}
+\note{Reference only. These operations affect the running process and future child commands, not the parent shell. Direct assignments and deletes in percent-ENV work too. Subcommand names such as SET are reserved after ENV; inspect a variable with that name using DUMP \$ENV{SET}. A snapshot may contain secrets; do not commit real snapshots or include them in demo material.}
 \end{frame}
 
 \begin{frame}[fragile]{Reference: VAR=value file syntax}
@@ -195,14 +195,14 @@ For stored inspection code, call \cmd{Data::Dumper::Dumper} or \cmd{Devel::Peek:
 
 \begin{frame}{Sources and version of this talk}
 \small
-Implementation snapshot: \cmd{6a9c90f7f189} \textemdash{} November 18, 2026.\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
+Implementation snapshot: \cmd{b2d147d81131} \textemdash{} November 18, 2026.\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
 \href{https://github.com/oodler577/p5-App-AnteREPL/wiki}{\textbf{User guide and workflow documentation}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/tree/6a9c90f7f189907b6c75911871b015fd8cb5582d/t}{\textbf{Unit and screen tests}}\hspace{5mm}
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
+\href{https://github.com/oodler577/p5-App-AnteREPL/tree/b2d147d811316d16be04a002da2acd942d2e9245/t}{\textbf{Unit and screen tests}}\hspace{5mm}
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/b2d147d811316d16be04a002da2acd942d2e9245/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
 \par\vspace{4mm}
 This deck documents an implementation under active UX testing.\par
 The included README explains rehearsal, shorter routes, and Overleaf editing.
-\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot 8b190d3 documents the same Left-navigation behavior. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
+\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot f0333bd documents the same uppercase commands and fresh-line exits. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
 \end{frame}
