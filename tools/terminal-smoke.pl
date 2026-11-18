@@ -413,6 +413,24 @@ wait_for(sub { index($transcript, "\r\nplain-resumed\r\n") >= 0 }, 'plain input 
 finish_repl();
 print "PASS: plain-terminal Ctrl-D ends AUTO and cancels unfinished input without exiting\n";
 
+for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
+    ($pty, $pid) = start_repl();
+    $selector = IO::Select->new($pty);
+    $view = TerminalView->new(16, 80);
+    ($transcript, $eof, $reaped) = ('', 0, 0);
+    wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, "$command startup");
+    if ($command =~ /!/) {
+        command('10 say "unsaved"', '10 say "unsaved"');
+        send_text("QUIT\r");
+        wait_for(sub { has_prefix('Unsaved program.') }, 'QUIT keeps unsaved source');
+    }
+    send_text("$command\r");
+    finish_repl();
+    check($transcript =~ /\e\[\?1049l\r?\n\z/,
+        "$command did not print a newline after restoring the original display");
+}
+print "PASS: QUIT, QUIT!, EXIT, and EXIT! restore the terminal and finish on a fresh line\n";
+
 sub finish_repl {
 my $deadline = now() + 5;
 while (now() < $deadline) {
@@ -428,6 +446,7 @@ while (now() < $deadline) {
     sleep(0.02) if $eof;
 }
 check($reaped, 'REPL did not exit');
+pump_for(0.05); # Drain final terminal restoration and newline before closing.
 my $settings = POSIX::Termios->new;
 $settings->getattr(fileno($pty)) or die "Cannot read terminal settings: $!\n";
 check(($settings->getlflag & ICANON) && ($settings->getlflag & ECHO), 'terminal not restored');

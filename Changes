@@ -35,3 +35,5 @@
        PERL ANTE REPL; LOAD still accepts legacy BASIC PERL V0.1 files
      - require uppercase REPL commands and subcommands, including DUMP and
        PEEK; lowercase/mixed-case input follows ordinary Perl and AUTO rules
+     - print a newline when QUIT/EXIT exits, including their forced forms;
+       screen mode writes it after restoring the original terminal display

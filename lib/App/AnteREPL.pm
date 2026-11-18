@@ -750,7 +750,7 @@ SHELL AND EXIT
                         Enter afterward to return. Plain mode uses normal I/O.
   chdir '/path'         Perl changes this session's directory; ! cd cannot.
   HELP                  Display this complete reference.
-  QUIT / EXIT           Exit; refuse to discard unsaved source without !.
+  QUIT / EXIT           Exit on a fresh line; protect unsaved source unless !.
                         Outside AUTO, Ctrl-D also exits if source is saved.
 
 SCREEN KEYS
@@ -970,7 +970,7 @@ sub main {
         my $continue;
         my $ok = eval { $continue = $self->dispatch($line); 1 };
         if (!$ok) { print STDERR $@; $had_error = 1; next; }
-        last unless $continue;
+        if (!$continue) { print "\n"; last; }
     }
     return $interactive ? 0 : $had_error;
 }
@@ -1510,6 +1510,9 @@ sub session {
     };
     my $error = $@;
     $self->leave;
+    # Write to the restored terminal, not the screen's captured output. Keep
+    # this out of leave(), which also suspends the screen for EDIT and shells.
+    print {$self->{out}} "\n";
     delete $repl->{screen};
     die $error unless $ok;
     return 0;
@@ -1883,6 +1886,10 @@ buffer. LOAD, IMPORT, NEW/CLEAR, and QUIT refuse to discard unsaved changes;
 append C<!> to those commands to override. UNDO remembers the last 50 program
 changes. The save filename is not rolled back by UNDO. Editing does not save
 your source file: use SAVE afterward. No automatic crash recovery is provided.
+
+QUIT and EXIT, including their C<!> forms, print a newline on exit so the shell
+prompt starts on a fresh line. In screen mode this happens after restoring the
+original terminal display.
 
 =head1 SCREEN EDITING AND MULTILINE INPUT
 

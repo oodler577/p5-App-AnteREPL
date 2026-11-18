@@ -138,6 +138,6 @@ my $stderr = do { local $/; <$err> };
 waitpid $pid, 0;
 is $? >> 8, 0, 'reported CLI session exits successfully';
 is $stderr, '', 'reported CLI session has no syntax errors';
-is $stdout, "5  say \"what is your name?\";\n10 say \"hi\";\nwhat is your name?\nhi\n", 'reported CLI transcript corrected and aligned';
+is $stdout, "5  say \"what is your name?\";\n10 say \"hi\";\nwhat is your name?\nhi\n\n", 'reported CLI transcript corrected and aligned';
 
 done_testing;

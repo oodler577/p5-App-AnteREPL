@@ -254,13 +254,19 @@ like fails { $edit->dispatch('RUN!') }, qr/suffix/, 'reject unsupported force su
 like fails { $edit->dispatch('SAVE "unfinished') }, qr/Usage/, 'unmatched filename quotes rejected';
 
 my ($out, $err, $status) = cli("\$x = 6;\n20 say \$x;\n10 \$x *= 7;\nRUN\n? \$x\nQUIT!\n");
-is $out, "42\n42\n", 'CLI immediate + stored evaluation';
+is $out, "42\n42\n\n", 'CLI immediate + stored evaluation';
 is $err, '', 'CLI no spurious warnings';
 is $status, 0, 'CLI success status';
 ($out, $err, $status) = cli("die \"oops\\n\";\nsay 7;\nQUIT\n");
-is $out, "7\n", 'CLI continues after exception';
+is $out, "7\n\n", 'CLI continues after exception';
 like $err, qr/oops/, 'CLI error is visible';
 is $status, 1, 'batch reports command failures';
+for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
+    ($out, $err, $status) = cli("print q{last output};\n$command\n");
+    is $out, "last output\n", "$command ends output on a fresh line";
+    is $err, '', "$command has no exit warning";
+    is $status, 0, "$command exits successfully";
+}
 ($out, $err, $status) = cli("10 say 1;\n");
 like $err, qr/Unsaved/, 'EOF reports dirty batch';
 is $status, 1, 'dirty batch exits nonzero';

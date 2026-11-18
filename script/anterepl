@@ -30,6 +30,8 @@ Type HELP for commands. LOAD reads ordinary Perl or
 numbered programs; AUTO stores unnumbered input with an increment of 5.
 AUTO OFF or Ctrl-C returns to immediate mode. EDIT opens the in-memory
 program in your local editor, and EDIT ENV edits the current environment.
+QUIT or EXIT returns to the shell on a fresh line; append C<!> to discard
+unsaved source.
 
 See L<App::AnteREPL> for the full command reference and screen controls.
 
