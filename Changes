@@ -37,3 +37,9 @@
        PEEK; lowercase/mixed-case input follows ordinary Perl and AUTO rules
      - print a newline when QUIT/EXIT exits, including their forced forms;
        screen mode writes it after restoring the original terminal display
+     - bound active screen memory to terminal rows and columns, with wrapped
+       lines and no off-screen history; clipped entries cannot run partially
+     - warn when a resize crops the screen and keep one inactive copy;
+       growing adds blank space, while RECOVER explicitly restores that copy
+     - make CLS forget the resize copy and HELP pause by screenful; document
+       the screen, numbered source, and live workspace as separate state

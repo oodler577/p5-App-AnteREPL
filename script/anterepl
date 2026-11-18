@@ -33,6 +33,12 @@ program in your local editor, and EDIT ENV edits the current environment.
 QUIT or EXIT returns to the shell on a fresh line; append C<!> to discard
 unsaved source.
 
+The visible terminal is the whole working screen ("VRAM"). Shrinking crops
+rows and columns, warns, and keeps one inactive copy. Growing adds empty cells.
+Enlarge to the size in the warning and use RECOVER to restore the copy;
+restoration is never automatic. CLS clears the screen and its recovery copy.
+The numbered program and live Perl values are unaffected by screen resizing.
+
 See L<App::AnteREPL> for the full command reference and screen controls.
 
 =head1 AUTHOR

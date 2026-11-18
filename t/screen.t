@@ -42,7 +42,7 @@ like $peek, qr/PVHV/, 'peek follows the hash reference';
 like $peek, qr/Elt "bar"/, 'peek inspects actual contents';
 like $peek, qr/REFCNT = 1/, 'peek does not add an artificial reference to the named scalar';
 like capture { $repl->dispatch('PEEK $FOO, 10;') }, qr/IV = 1/, 'peek accepts the optional depth/element limit';
-my $failed = eval { $repl->dispatch('peek my $x = ;'); 1 };
+my $failed = eval { $repl->dispatch('PEEK my $x = ;'); 1 };
 ok !$failed, 'peek syntax errors are reported';
 like capture { $repl->dispatch('say "still works"') }, qr/still works/, 'stdout restored after failed peek';
 
@@ -341,9 +341,9 @@ sub screen_rows { [map { $_->{text} } @{ $_[0]{rows} }] }
     screen_run($s, $r, 'BOTTOM', typing('CLS'), 'ENTER');
     is_deeply screen_rows($s), [''], 'CLS clears output associations as well as screen rows';
 
-    $s->append("LIST 5\n" x 4999);
+    $s->append("LIST 5\n" x 40);
     screen_run($s, $r, 'TOP', 'ENTER');
-    cmp_ok scalar @{ $s->{rows} }, '<=', 5000, 'rerunning at the retention limit keeps a bounded screen';
+    cmp_ok scalar @{ $s->{rows} }, '<=', $s->{height}, 'rerunning at the screen edge keeps only visible rows';
     is $s->{rows}[$s->{row} - 1]{text}, '5     say "indented";',
         'the newest listing row remains immediately above the cursor at the retention limit';
     ok !$s->{rows}[-1]{list_width}, 'retention trimming does not attach LIST padding to an unrelated tail row';

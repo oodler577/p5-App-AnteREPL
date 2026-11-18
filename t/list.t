@@ -65,7 +65,7 @@ $screen->{wait_for_pause} = 1;
 $screen->{test_keys} = ['ENTER', ['TEXT','s'], ['TEXT',' '], ['TEXT','q']];
 $screen->list_rows(\@rows, 2, 'pause');
 my @printed = grep { $_->{list_width} } @{ $screen->{rows} };
-is scalar @printed, 4, 'PAUSE stops after a screenful; Enter adds exactly one line';
+is scalar @printed, 3, 'stepping a full screen scrolls the oldest listed row away';
 is $printed[-1]{text}, '4  say 4;', 'stepped row is the next source line';
 ok scalar(grep { /LIST paused/ } @{ $screen->{seen_status} }), 'paused state is displayed';
 ok scalar(grep { /LIST slow/ } @{ $screen->{seen_status} }), 'S selects slow speed when resuming';
@@ -102,5 +102,14 @@ for (1 .. 2) {
 }
 delete $memory->{screen};
 is capture { $memory->run }, "indented\nother\n", 'aligned resubmission keeps the program executable';
+
+my $help = ListingScreen->new;
+$help->{height} = 4;
+$help->{wait_for_pause} = 1;
+$help->{test_keys} = [['TEXT', 'q']];
+$memory->{screen} = $help;
+$memory->dispatch('HELP');
+ok scalar(grep { /HELP paused/ } @{$help->{seen_status}}), 'HELP pauses before its first screenful scrolls away';
+is $memory->source, "    say \"indented\";\nsay \"other\";\n", 'reading paged HELP does not change source';
 
 done_testing;

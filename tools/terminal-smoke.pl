@@ -118,7 +118,7 @@ sub now { clock_gettime(CLOCK_MONOTONIC) }
 sub has_line { my ($line) = @_; return scalar grep { $_ eq $line } $view->lines; }
 sub has_prefix { my ($prefix) = @_; return scalar grep { index($_, $prefix) == 0 } $view->lines; }
 sub screen_text { join "\n", $view->lines }
-sub check { my ($ok, $message) = @_; die "$message\n" . screen_text() . "\n" unless $ok; }
+sub check { my ($ok, $message) = @_; die "$message (cursor $view->{row},$view->{col})\n" . screen_text() . "\n" unless $ok; }
 
 sub read_available {
     my ($timeout) = @_;
@@ -220,10 +220,11 @@ print "PASS: program prompts and reads a line through the screen\n";
 command('say $_ for 1..40', '40');
 check(!has_line('1'), 'display did not scroll upward');
 send_text("\e[5~\e[5~");
-wait_for(sub { has_line('20') }, 'screen PageUp');
+wait_for(sub { $view->{row} == 0 }, 'PageUp stops at the visible top');
+check(!has_line('20') && has_line('40'), 'PageUp recovered discarded screen rows');
 send_text("\e[1;5F");
 command('! printf "shell-output\\n"', 'shell-output');
-print "PASS: display scrolls upward; PageUp traverses text; shell output returns to screen\n";
+print "PASS: display scrolls upward; PageUp stays within visible rows; shell output returns to screen\n";
 
 my $marker = length $transcript;
 send_text('!! printf "external-output\\n"' . "\r");
@@ -413,6 +414,52 @@ wait_for(sub { index($transcript, "\r\nplain-resumed\r\n") >= 0 }, 'plain input 
 finish_repl();
 print "PASS: plain-terminal Ctrl-D ends AUTO and cancels unfinished input without exiting\n";
 
+($pty, $pid) = start_repl();
+$selector = IO::Select->new($pty);
+$view = TerminalView->new(16, 80);
+($transcript, $eof, $reaped) = ('', 0, 0);
+wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'resize session startup');
+check(index($transcript, 'Screen clipped') < 0, 'initial size detection warned about a resize');
+send_text("HELP\r");
+wait_for(sub { has_prefix('HELP paused') }, 'HELP pauses on a visible screenful');
+send_text('q');
+wait_for(sub { !has_prefix('HELP paused') }, 'HELP returns to editing after Q');
+send_text("CLS\r");
+wait_for(sub { !grep { length } $view->lines }, 'clear HELP before resize exercise');
+command('10 say "kept"', '10 say "kept"');
+command('$runs = 0; say ++$runs', '1');
+my $wide = 'wide:' . ('x' x 60);
+command('say "wide:" . ("x" x 60)', $wide);
+command('say "row:$_" for 1..10', 'row:10');
+my $original_screen = screen_text();
+resize_terminal(10, 40);
+wait_for(sub { has_prefix('# Screen clipped; RECOVER') }, 'idle terminal shrink warning');
+check(!has_line($wide), 'shrinking retained off-screen columns');
+send_text("RECOVER\r");
+wait_for(sub { has_prefix('Enlarge the terminal') }, 'recovery refuses a small terminal');
+resize_terminal(16, 80);
+pump_for(0.3);
+check(!has_line($wide), 'growing automatically restored the saved screen');
+send_text("RECOVER\r");
+wait_for(sub { screen_text() eq $original_screen }, 'explicit recovery restores the bank');
+command('? $runs', '1');
+command('RUN', 'kept');
+send_text("CLS\r");
+wait_for(sub { !grep { length } $view->lines }, 'clear before right-edge output');
+send_text('say "x" x 95' . "\r");
+wait_for(sub { has_line('x' x 80) && has_line('x' x 15) }, 'output wraps at physical width');
+resize_terminal(10, 40);
+wait_for(sub { has_prefix('# Screen clipped; RECOVER') }, 'second shrink creates a fresh bank');
+send_text("CLS\r");
+wait_for(sub { !grep { length } $view->lines }, 'CLS discards resize bank');
+resize_terminal(16, 80);
+pump_for(0.3);
+send_text("RECOVER\r");
+wait_for(sub { has_prefix('No saved screen.') }, 'CLS bank cannot return');
+send_text("QUIT!\r");
+finish_repl();
+print "PASS: idle resize crops rows/columns, grow stays blank, RECOVER is explicit, and source/workspace survive\n";
+
 for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
     ($pty, $pid) = start_repl();
     $selector = IO::Select->new($pty);
@@ -430,6 +477,13 @@ for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
         "$command did not print a newline after restoring the original display");
 }
 print "PASS: QUIT, QUIT!, EXIT, and EXIT! restore the terminal and finish on a fresh line\n";
+
+sub resize_terminal {
+    my ($height, $width) = @_;
+    @{$view}{qw(height width)} = ($height, $width);
+    $view->clear;
+    $pty->set_winsize($height, $width);
+}
 
 sub finish_repl {
 my $deadline = now() + 5;

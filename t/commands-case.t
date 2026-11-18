@@ -26,7 +26,7 @@ sub fails (&) { my ($code) = @_; local $@; eval { $code->(); 1 }; return $@; }
 {
     local %ENV = (case_test => 'value');
     for my $word (qw(AUTO ENV LIST RUN EDIT DEL DELETE RENUM REORDER UNDO SAVE LOAD
-                     IMPORT EXPORT NEW CLEAR CLS RESET FUNCTIONS STATUS HELP QUIT EXIT EVAL DUMP PEEK),
+                     IMPORT EXPORT NEW CLEAR CLS RECOVER RESET FUNCTIONS STATUS HELP QUIT EXIT EVAL DUMP PEEK),
                   'LIST10-50', 'NEW!', 'QUIT!') {
         for my $input (lc($word), ucfirst(lc($word))) {
             my $r = CaseRoute->new;

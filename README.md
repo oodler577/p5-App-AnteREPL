@@ -6,7 +6,7 @@ The startup banner is `*** PERL ANTE REPL V0.1 ***`.
 
 Screen editing inserts characters by default; Insert toggles overwrite mode.
 Move up, edit an earlier entry, and press Enter to replace its result directly
-below it. Later entries stay intact without an added blank spacer. The cursor
+below it. Later entries stay intact while they fit, without an added blank spacer. The cursor
 follows the result onto the next row; Esc moves to fresh input at the bottom.
 
 ```text
@@ -26,7 +26,7 @@ there!
 Entries stay quiet by default; `LIST` shows numbers, or use `AUTO ECHO ON`.
 Outside AUTO, ordinary Perl executes immediately. `EDIT` opens the stored
 program in `$EDITOR`; `EDIT ENV` edits `%ENV` using `VAR=value` lines.
-`CLS` clears the screen while keeping the stored program ("VRAM"), live Perl
+`CLS` clears the screen and resize bank while keeping the stored program, live Perl
 variables, and `%ENV`. Use `LIST` to display the program again.
 All REPL commands and subcommands are uppercase, including `LIST`, `AUTO OFF`,
 `ENV SET`, `DUMP`, and `PEEK`. Lowercase/mixed-case input is ordinary Perl:
@@ -40,6 +40,23 @@ current workspace. Immediate code and `RUN` can call it; it does not enter
 the numbered program or appear in `SAVE`. `FUNCTIONS` lists defined functions
 in the current workspace, including imports. Redefining a named subroutine
 replaces it with Perl's usual warning; no confirmation is required.
+
+## A screen-sized work area
+
+The visible screen is the working "VRAM", like a sheet of graph paper.
+Its size follows your terminal. Output scrolls old rows away; long lines wrap.
+PageUp cannot reach an invisible history.
+
+Making the window smaller cuts off rows and columns. AnteREPL warns and keeps
+one separate copy from before the shrink. Making it bigger adds empty cells:
+lost text does not return on its own. To get the copy back, enlarge to the size
+in the warning and type `RECOVER`. That replaces the current screen without
+running code. `CLS` forgets the copy; ordinary scrolling does not make one.
+
+Your numbered program and live Perl values are separate from this sheet.
+`LIST` brings source back into view; `SAVE` writes source to disk. Use `EDIT`
+for code too large to fit on the screen. An entry clipped by the boundary
+cannot run as partial Perl. `HELP` pauses by screenful in screen mode.
 
 ## Install and run
 

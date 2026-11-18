@@ -75,6 +75,12 @@ sub clear_screen {
     elsif (-t STDOUT && ($ENV{TERM} || '') ne 'dumb') { print "\e[2J\e[H"; }
 }
 
+sub recover_screen {
+    my ($self) = @_;
+    die "RECOVER requires screen mode.\n" unless $self->{screen};
+    $self->{screen}->recover_display;
+}
+
 sub _number {
     my ($number) = @_;
     die "Line numbers must be integers from 1 to $max_line.\n"
@@ -598,7 +604,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -700,9 +706,12 @@ LISTING, EDITING, AND RECOVERY
   RENUM [start [step]]  Renumber; defaults are 10 and 10. REORDER is an alias.
   UNDO                  Undo a source edit (last 50), including EDIT or LOAD.
                         No rollback of executed Perl, %ENV, or file writes.
-  CLS                   Clear display and retained screen rows; keep the
-                        stored program ("VRAM"), variables, %ENV, and AUTO.
+  CLS                   Clear screen and resize bank; keep the
+                        stored program, variables, %ENV, and AUTO.
                         No output in a pipe or on a dumb terminal.
+  RECOVER               Restore the saved pre-shrink screen, only if it fits.
+                        Replaces current screen text; never runs code or
+                        changes stored source. Screen mode only. No ! suffix.
   NEW / CLEAR           Clear source and its filename; retain Perl variables.
   RESET                 Fresh Perl workspace; retain source and live %ENV.
   STATUS                Line count, save status, filename, and AUTO next/step.
@@ -749,7 +758,8 @@ SHELL AND EXIT
   !! command            Give an interactive command the real terminal; press
                         Enter afterward to return. Plain mode uses normal I/O.
   chdir '/path'         Perl changes this session's directory; ! cd cannot.
-  HELP                  Display this complete reference.
+  HELP                  Display this complete reference; pause by screenful.
+                        Plain mode prints it all without pauses.
   QUIT / EXIT           Exit on a fresh line; protect unsaved source unless !.
                         Outside AUTO, Ctrl-D also exits if source is saved.
 
@@ -758,7 +768,8 @@ SCREEN KEYS
   Left at row start     Move to the previous row's end; stop at the first row.
   Enter                 Submit selected row or its complete multiline entry.
                         Rerunning replaces its output directly below the entry;
-                        later entries remain. Cursor follows the new result.
+                        later entries remain while they fit on screen.
+                        Cursor follows the new result.
                         No blank spacer is added. Esc goes to fresh input.
   Shift-Enter / Ctrl-N   Insert newline at cursor without submitting the entry.
                         Shift-Enter needs a distinct terminal key sequence;
@@ -766,13 +777,19 @@ SCREEN KEYS
   Insert                Toggle insert/overwrite; default is insert.
   Backspace / Delete    Remove characters. Tab inserts to a 4-column tab stop.
   Home / End            Start/end of row. PageUp/PageDown traverse screen rows.
-  Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: oldest row.
+  Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: visible top row.
   Ctrl-U / Ctrl-L       Clear current row / redraw screen.
   Ctrl-C                Cancel input/end AUTO, or interrupt running Perl.
   Ctrl-D                End AUTO/cancel input; otherwise exit if source saved.
 
-  No READY prompt or shell history. New output scrolls upward; 5000 rows kept
-  this session. Long rows scroll sideways. Wide/combining glyphs may misalign.
+  The visible screen is the working "VRAM": no off-screen rows or columns.
+  Output scrolls old rows away. Long lines wrap; they do not scroll sideways.
+  Shrinking crops rows/columns and warns; one inactive pre-shrink copy is kept.
+  Growing adds empty cells, without warning or automatic recovery. Enlarge to
+  the size named in the warning, then RECOVER if you want the saved copy back.
+  Repeated shrinking keeps that first copy until RECOVER or CLS. It is not
+  saved on disk. Scroll-off alone makes no backup. A clipped entry cannot run.
+  Use EDIT for code too large for the screen. Wide/combining glyphs may misalign.
   Editing screen text alone changes nothing until Enter. Bracketed paste waits
   for Enter. GUI editors need a wait option, e.g. $ENV{EDITOR} = 'code --wait'.
 
@@ -826,7 +843,7 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
+    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
         my ($command, $force, $tail) = ($1, $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
@@ -869,6 +886,7 @@ sub dispatch {
             }
             elsif ($command eq 'UNDO') { $self->undo; print "Program edit undone.\n"; }
             elsif ($command eq 'CLS') { $self->clear_screen; }
+            elsif ($command eq 'RECOVER') { $self->recover_screen; }
             elsif ($command eq 'NEW' || $command eq 'CLEAR') { $self->clear($force); }
             elsif ($command eq 'RESET') { $self->reset_workspace; print "Perl workspace reset; program retained.\n"; }
             elsif ($command eq 'FUNCTIONS') {
@@ -882,7 +900,10 @@ sub dispatch {
                     '; ', (defined $self->{filename} ? $self->{filename} : 'no save filename'), ".\n";
                 print "AUTO next $self->{auto}{next}, step $self->{auto}{step}.\n" if $self->{auto};
             }
-            elsif ($command eq 'HELP') { print help(); }
+            elsif ($command eq 'HELP') {
+                if ($self->{screen}) { $self->{screen}->list_rows([split /\n/, help()], 0, 'pause', 'HELP'); }
+                else { print help(); }
+            }
             elsif ($command eq 'QUIT' || $command eq 'EXIT') {
                 $self->_guard('QUIT', $force);
                 return 0;
@@ -1025,8 +1046,121 @@ sub dimensions {
         my $size = pack('S4', 0, 0, 0, 0);
         ($height, $width) = unpack('S4', $size) if ioctl($self->{in}, $self->{winsize}, $size);
     }
-    $self->{width} = $width if $width && $width >= 10;
-    $self->{height} = $height if $height && $height >= 3;
+    if (!$self->{size_seen}++) {
+        $self->{width} = $width if $width && $width > 0;
+        $self->{height} = $height if $height && $height > 0;
+        $self->_fit;
+    }
+    else { $self->resize($width || $self->{width}, $height || $self->{height}); }
+}
+
+# Only these rows are active screen memory. There is no off-screen viewport.
+# Soft rows wrap one source line; group joins explicit multiline input.
+sub _discard_rows {
+    my ($self, $start, $count) = @_;
+    return unless $count;
+    my @gone = splice @{ $self->{rows} }, $start, $count;
+    my %groups = map { $_->{group} ? ($_->{group} => 1) : () } @gone;
+    $_->{clipped} = 1 for grep { $_->{group} && $groups{$_->{group}} } @{ $self->{rows} };
+    if ($start == 0 && $self->{rows}[0] && delete $self->{rows}[0]{soft}) {
+        $self->{rows}[0]{clipped} = 1;
+    }
+    elsif ($start && $gone[0]{soft} && $self->{rows}[$start - 1]) {
+        $self->{rows}[$start - 1]{clipped} = 1;
+    }
+    for my $key (qw(row output_row data_row)) {
+        next unless defined $self->{$key};
+        my $old = $self->{$key};
+        $self->{data_lost} = 1 if $key eq 'data_row' && $old >= $start && $old < $start + $count;
+        $self->{$key} -= $count if $old >= $start + $count;
+        $self->{$key} = $start if $old >= $start && $old < $start + $count;
+        $self->{$key} = $#{ $self->{rows} } if $self->{$key} > $#{ $self->{rows} };
+        $self->{$key} = 0 if $self->{$key} < 0;
+    }
+}
+
+sub _fit {
+    my ($self) = @_;
+    my ($w, $h) = @{$self}{qw(width height)};
+    for (my $i = 0; $i < @{ $self->{rows} }; ++$i) {
+        my $row = $self->{rows}[$i];
+        next unless length($row->{text}) > $w
+            || ($self->{row} == $i && $self->{col} >= $w);
+        my $tail = substr($row->{text}, $w, length($row->{text}), '');
+        my $next = $self->{rows}[$i + 1];
+        if ($next && $next->{soft}) {
+            $next->{text} = $tail . $next->{text};
+            $self->{col} += length $tail if $self->{row} == $i + 1;
+            $self->{data_col} += length $tail if defined $self->{data_row} && $self->{data_row} == $i + 1;
+        }
+        else {
+            my %copy = %$row;
+            delete $copy{list_width};
+            splice @{ $self->{rows} }, $i + 1, 0, { %copy, text => $tail, soft => 1 };
+            ++$self->{$_} for grep { defined $self->{$_} && $self->{$_} > $i } qw(row output_row data_row);
+        }
+        if ($self->{row} == $i && $self->{col} >= $w) {
+            ++$self->{row}; $self->{col} -= $w;
+        }
+        if (defined $self->{data_row} && $self->{data_row} == $i && $self->{data_col} >= $w) {
+            ++$self->{data_row}; $self->{data_col} -= $w;
+        }
+        $self->{output_row} = $self->{row} if defined $self->{output_row};
+    }
+    my $excess = @{ $self->{rows} } - $h;
+    if ($excess > 0) {
+        my $head = $self->{row} - $h + 1;
+        $head = 0 if $head < 0;
+        $head = $excess if $head > $excess;
+        $self->_discard_rows(0, $head);
+        $self->_discard_rows($h, @{ $self->{rows} } - $h) if @{ $self->{rows} } > $h;
+    }
+    $self->{col} = length($self->{rows}[$self->{row}]{text})
+        if $self->{col} > length($self->{rows}[$self->{row}]{text});
+    $self->{top} = $self->{left} = 0;
+}
+
+sub resize {
+    my ($self, $width, $height) = @_;
+    return if $width < 1 || $height < 1;
+    return if $width == $self->{width} && $height == $self->{height};
+    my $shrink = $width < $self->{width} || $height < $self->{height};
+    if ($shrink) {
+        # Keep the first unclaimed snapshot through repeated resize events.
+        $self->{resize_bank} ||= { width=>$self->{width}, height=>$self->{height},
+            row=>$self->{row}, col=>$self->{col}, rows=>[map { +{%$_} } @{ $self->{rows} }] };
+    }
+    @{$self}{qw(width height top left)} = ($width, $height, 0, 0);
+    delete $self->{last_frame};
+    return unless $shrink; # Growing adds empty cells; never restores the bank.
+    my %groups;
+    for my $i (0 .. $#{ $self->{rows} }) {
+        my $row = $self->{rows}[$i];
+        next unless length($row->{text}) > $width;
+        substr($row->{text}, $width) = '';
+        $row->{clipped} = 1;
+        $groups{$row->{group}} = 1 if $row->{group};
+    }
+    $_->{clipped} = 1 for grep { $_->{group} && $groups{$_->{group}} } @{ $self->{rows} };
+    $self->_discard_rows($height, @{ $self->{rows} } - $height) if @{ $self->{rows} } > $height;
+    $self->{col} = $width - 1 if $self->{col} >= $width;
+    $self->{data_lost} = 1 if defined $self->{data_row};
+    delete @{$self}{qw(output_row output_owner)};
+    $self->fresh(1);
+    my $bank = $self->{resize_bank};
+    $self->append("# Screen clipped; RECOVER at $bank->{width}x$bank->{height}.\n");
+}
+
+sub recover_display {
+    my ($self) = @_;
+    my $bank = $self->{resize_bank} or die "No saved screen. RECOVER follows a terminal shrink.\n";
+    die "Enlarge the terminal to at least $bank->{width}x$bank->{height}, then RECOVER.\n"
+        if $self->{width} < $bank->{width} || $self->{height} < $bank->{height};
+    $self->{rows} = [map { +{%$_} } @{ $bank->{rows} }];
+    @{$self}{qw(row col top left)} = ($bank->{row}, $bank->{col}, 0, 0);
+    delete @{$self}{qw(resize_bank output_row output_owner last_frame)};
+    $self->{keep_cursor} = 1;
+    $self->render;
 }
 
 sub enter {
@@ -1034,6 +1168,7 @@ sub enter {
     if ($self->{backend} eq 'readkey') { Term::ReadKey::ReadMode('cbreak', $self->{in}); }
     else { $self->{raw_term}->setattr(fileno($self->{in}), POSIX::TCSANOW()); }
     $self->{entered} = 1;
+    delete $self->{last_frame};
     $active = $self;
     print {$self->{out}} "\e[?1049h\e[?2004h\e[2J";
     $self->render;
@@ -1051,6 +1186,7 @@ END { eval { $active->leave if $active; }; }
 
 sub fresh {
     my ($self, $bottom) = @_;
+    return if delete $self->{keep_cursor};
     my $in_place = !$bottom && defined $self->{output_row};
     my $row = $in_place ? $self->{output_row} : $#{ $self->{rows} };
     if ($in_place) {
@@ -1078,6 +1214,7 @@ sub fresh {
     $self->{col} = 0;
     $self->{left} = 0;
     delete @{$self}{qw(output_row output_owner)};
+    $self->_fit;
 }
 
 sub start_output {
@@ -1088,6 +1225,8 @@ sub start_output {
         delete $self->{rows}[$index]{output_for};
     }
     my $row = $last + 1;
+    splice @{ $self->{rows} }, $row, 1
+        if $self->{rows}[$row] && $self->{rows}[$row]{soft} && $self->{rows}[$row]{text} eq '';
     my $end = $row;
     ++$end while $end < @{ $self->{rows} }
         && ($self->{rows}[$end]{output_for} || 0) == $owner;
@@ -1100,13 +1239,14 @@ sub start_output {
     }
     $self->{rows}[$row]{output_for} = $owner;
     @{$self}{qw(row col left output_row output_owner)} = ($row, 0, 0, $row, $owner);
+    $self->_fit;
 }
 
 sub clear_display {
     my ($self) = @_;
     $self->{rows} = [{ text => '' }];
     @{$self}{qw(row col top left)} = (0, 0, 0, 0);
-    delete @{$self}{qw(list_status output_row output_owner)};
+    delete @{$self}{qw(list_status output_row output_owner resize_bank keep_cursor last_frame)};
     $self->render;
 }
 
@@ -1119,6 +1259,10 @@ sub append {
     $text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/?/g;
     for my $part (split /(\n|\r|\t)/, $text) {
         if ($part eq "\n") {
+            if ($self->{rows}[$row]{soft} && $self->{rows}[$row]{text} eq '') {
+                delete $self->{rows}[$row]{soft};
+                next;
+            }
             my $next = { text => '' };
             $next->{output_for} = $self->{output_owner} if $self->{output_owner};
             splice @{ $self->{rows} }, ++$row, 0, $next;
@@ -1127,49 +1271,40 @@ sub append {
         elsif ($part eq "\t") { $self->{rows}[$row]{text} .= ' ' x (8 - length($self->{rows}[$row]{text}) % 8); }
         else { $self->{rows}[$row]{text} .= $part; }
     }
-    if (@{ $self->{rows} } > 5000) {
-        my $excess = @{ $self->{rows} } - 5000;
-        # Keep the most recent output row as well as the cursor when rerunning
-        # near the oldest retained rows; LIST attaches padding to that row.
-        my $keep = $row > 0 ? $row - 1 : 0;
-        my $head = $excess < $keep ? $excess : $keep;
-        splice @{ $self->{rows} }, 0, $head;
-        $row -= $head;
-        $self->{top} = $self->{top} > $head ? $self->{top} - $head : 0;
-        splice @{ $self->{rows} }, 5000 if @{ $self->{rows} } > 5000;
-    }
     $self->{output_row} = $row if defined $self->{output_row};
     $self->{row} = $row;
     $self->{col} = length $self->{rows}[$row]{text};
     $self->{left} = 0;
+    $self->_fit;
     $self->render if $self->{entered};
 }
 
 sub render {
     my ($self) = @_;
-    return unless $self->{entered};
     $self->dimensions;
-    my ($h, $w) = ($self->{height}, $self->{width} - 1);
-    $self->{top} = $self->{row} if $self->{row} < $self->{top};
-    $self->{top} = $self->{row} - $h + 1 if $self->{row} >= $self->{top} + $h;
-    $self->{left} = $self->{col} if $self->{col} < $self->{left};
-    $self->{left} = $self->{col} - $w + 1 if $self->{col} >= $self->{left} + $w;
+    $self->_fit;
+    return unless $self->{entered};
+    my ($h, $w) = ($self->{height}, $self->{width});
     my $frame = "\e[?25l\e[H";
     for my $offset (0 .. $h - 1) {
-        my $row = $self->{rows}[ $self->{top} + $offset ];
+        my $row = $self->{rows}[$offset];
         my $text = $row ? $row->{text} : '';
         $text = $self->{list_status} if $self->{list_status}
-            && $self->{top} + $offset == $self->{row} && $text eq '';
-        $text = length($text) > $self->{left} ? substr($text, $self->{left}, $w) : '';
+            && $offset == $self->{row} && $text eq '';
+        $text = substr($text, 0, $w);
         $frame .= "\e[" . ($offset + 1) . ";1H\e[2K" . $text;
     }
-    $frame .= "\e[" . ($self->{row} - $self->{top} + 1) . ';' . ($self->{col} - $self->{left} + 1) . 'H';
+    $frame .= "\e[" . ($self->{row} + 1) . ';' . ($self->{col} + 1) . 'H';
     $frame .= $self->{insert} ? "\e[6 q" : "\e[2 q";
-    print {$self->{out}} $frame, ($self->{list_status} ? '' : "\e[?25h");
+    $frame .= $self->{list_status} ? '' : "\e[?25h";
+    return if defined $self->{last_frame} && $self->{last_frame} eq $frame;
+    $self->{last_frame} = $frame;
+    print {$self->{out}} $frame;
 }
 
 sub list_rows {
-    my ($self, $rows, $width, $mode) = @_;
+    my ($self, $rows, $width, $mode, $label) = @_;
+    $label ||= 'LIST';
     return unless @$rows;
     $self->dimensions;
     my $controlled = @$rows > $self->{height} - 1 || $mode ne 'normal';
@@ -1178,19 +1313,21 @@ sub list_rows {
     my $ok = eval {
         LINE: for my $index (0 .. $#$rows) {
             last if $stop;
-            $self->{list_status} = 'LIST ' . ($slow ? 'slow' : 'normal') . ' | Space pause | S speed | Q stop' if $controlled;
+            $self->{list_status} = "$label " . ($slow ? 'slow' : 'normal') . ' | Space pause | S speed | Q stop' if $controlled;
             $self->append($rows->[$index] . "\n");
             # Remember which spaces belong to LIST's number column so editing
             # and resubmitting a listed row never accumulates source indentation.
-            $self->{rows}[$self->{row} - 1]{list_width} = $width;
+            my $listed = $self->{row} - 1;
+            --$listed while $listed > 0 && $self->{rows}[$listed]{soft};
+            $self->{rows}[$listed]{list_width} = $width if $listed >= 0;
             ++$page_count;
             next if !$controlled || $index == $#$rows;
             $paused = 1 if $mode eq 'pause' && $page_count >= $self->{height} - 1;
             my $until = time + ($slow ? 0.25 : 0.03);
             while (!$stop) {
                 $self->{list_status} = $paused
-                    ? 'LIST paused | Space resume | Enter step | S speed | Q stop'
-                    : 'LIST ' . ($slow ? 'slow' : 'normal') . ' | Space pause | S speed | Q stop';
+                    ? "$label paused | Space resume | Enter step | S speed | Q stop"
+                    : "$label " . ($slow ? 'slow' : 'normal') . ' | Space pause | S speed | Q stop';
                 $self->render;
                 my $remaining = $until - time;
                 last if !$paused && $remaining <= 0;
@@ -1297,16 +1434,22 @@ sub key {
 
 sub edit_key {
     my ($self, $key) = @_;
+    $self->_fit;
     my $row = $self->{rows}[ $self->{row} ];
     if (ref $key) {
         my $text = $key->[1];
         if ($key->[0] eq 'PASTE' && $text =~ /\n/) {
             my $group = $row->{group} || ++$self->{serial};
+            my ($first, $last) = ($self->{row}, $self->{row});
+            --$first while $first && $self->{rows}[$first]{soft};
+            ++$last while $self->{rows}[$last + 1] && $self->{rows}[$last + 1]{soft};
+            $self->{rows}[$_]{group} = $group for $first .. $last;
             my $before = substr($row->{text}, 0, $self->{col});
             my $after = substr($row->{text}, $self->{col});
             my @parts = split /\n/, $before . $text . $after, -1;
-            my %owner = map { exists $row->{$_} ? ($_ => $row->{$_}) : () } qw(entry_id output_for);
+            my %owner = map { exists $row->{$_} ? ($_ => $row->{$_}) : () } qw(entry_id output_for clipped);
             splice @{ $self->{rows} }, $self->{row}, 1, map { {text=>$_, group=>$group, %owner} } @parts;
+            $self->{rows}[$self->{row}]{soft} = 1 if $row->{soft};
             $self->{row} += $#parts;
             $self->{col} = length($parts[-1]) - length($after);
         }
@@ -1323,6 +1466,7 @@ sub edit_key {
         $self->{row} = 0 if $self->{row} < 0;
         $self->{row} = $#{ $self->{rows} } if $self->{row} > $#{ $self->{rows} };
         my $length = length $self->{rows}[ $self->{row} ]{text};
+        --$length if $length == $self->{width};
         $self->{col} = $length if $self->{col} > $length;
     }
     elsif ($key eq 'LEFT') {
@@ -1330,19 +1474,36 @@ sub edit_key {
         elsif ($self->{row} > 0) {
             --$self->{row};
             $self->{col} = length $self->{rows}[$self->{row}]{text};
+            --$self->{col} if $self->{col} == $self->{width};
         }
     }
     elsif ($key eq 'RIGHT') { ++$self->{col} if $self->{col} < length $row->{text}; }
     elsif ($key eq 'HOME') { $self->{col} = 0; }
-    elsif ($key eq 'END') { $self->{col} = length $row->{text}; }
+    elsif ($key eq 'END') {
+        $self->{col} = length $row->{text};
+        --$self->{col} if $self->{col} == $self->{width};
+    }
     elsif ($key eq 'TOP') { $self->{row} = $self->{col} = 0; }
     elsif ($key eq 'BOTTOM' || $key eq 'ESC') { $self->fresh(1); }
     elsif ($key eq 'INSERT') { $self->{insert} = !$self->{insert}; }
-    elsif ($key eq 'BACKSPACE') { substr($row->{text}, --$self->{col}, 1, '') if $self->{col} > 0; }
+    elsif ($key eq 'BACKSPACE') {
+        if (!$self->{col} && $self->{row} && $row->{soft}) {
+            --$self->{row};
+            $row = $self->{rows}[$self->{row}];
+            $self->{col} = length $row->{text};
+        }
+        substr($row->{text}, --$self->{col}, 1, '') if $self->{col} > 0;
+    }
     elsif ($key eq 'DELETE') { substr($row->{text}, $self->{col}, 1, '') if $self->{col} < length $row->{text}; }
-    elsif ($key eq 'CLEAR') { $row->{text} = ''; delete $row->{list_width}; $self->{col} = 0; }
+    elsif ($key eq 'CLEAR') {
+        %$row = (text => ''); $self->{col} = 0;
+        if ($self->{rows}[$self->{row} + 1] && delete $self->{rows}[$self->{row} + 1]{soft}) {
+            $self->{rows}[$self->{row} + 1]{clipped} = 1;
+        }
+    }
     elsif ($key eq 'NEWLINE') { $self->edit_key(['PASTE', "\n"]); }
     elsif ($key eq 'TAB') { $self->edit_key(['TEXT', ' ' x (4 - $self->{col} % 4)]); }
+    $self->_fit;
 }
 
 sub entry {
@@ -1353,8 +1514,14 @@ sub entry {
         --$first while $first > 0 && ($self->{rows}[$first - 1]{group} || 0) == $group;
         ++$last while $last < $#{ $self->{rows} } && ($self->{rows}[$last + 1]{group} || 0) == $group;
     }
-    my $text = join("\n", map { $self->{rows}[$_]{text} } $first .. $last);
-    if ($first == $last && $self->{rows}[$first]{list_width}) {
+    --$first while $first > 0 && $self->{rows}[$first]{soft};
+    ++$last while $self->{rows}[$last + 1] && $self->{rows}[$last + 1]{soft};
+    die "This entry was clipped. Re-enter it, use EDIT, or enlarge and RECOVER a saved screen.\n"
+        if grep { $_->{clipped} } @{ $self->{rows} }[$first .. $last];
+    --$last if $last > $first && $self->{rows}[$last]{soft} && $self->{rows}[$last]{text} eq '';
+    my $text = join('', map { ($_ == $first || $self->{rows}[$_]{soft} ? '' : "\n")
+        . $self->{rows}[$_]{text} } $first .. $last);
+    if ($self->{rows}[$first]{list_width}) {
         my $width = $self->{rows}[$first]{list_width};
         if (length($text) > $width && substr($text, $width, 1) eq ' '
             && substr($text, 0, $width) =~ /\A([0-9]+) *\z/) {
@@ -1368,7 +1535,8 @@ sub read_entry {
     my ($self) = @_;
     while (1) {
         $self->render;
-        my $key = $self->key;
+        my $key = $self->key(0.1);
+        next if !ref($key) && $key eq 'NONE';
         if (!ref($key) && $key eq 'ENTER') {
             my ($text, $first, $last) = $self->entry;
             if ($self->{repl} ? $self->{repl}->input_needs_more($text) : App::AnteREPL::needs_more($text)) {
@@ -1379,6 +1547,7 @@ sub read_entry {
                 splice @{ $self->{rows} }, $last + 1, 0, {text=>'', group=>$group};
                 $self->{row} = $last + 1;
                 $self->{col} = 0;
+                $self->_fit;
                 next;
             }
             $self->start_output($first, $last);
@@ -1403,19 +1572,33 @@ sub read_data {
     $self->{row} = $row;
     my $start = length $self->{rows}[$row]{text};
     $self->{col} = $start;
+    local @{$self}{qw(data_row data_col data_lost)} = ($row, $start, 0);
     while (1) {
         $self->render;
-        my $key = $self->key;
+        die "Input was clipped by the screen boundary. Please run the command again.\n" if $self->{data_lost};
+        my $key = $self->key(0.1);
+        next if !ref($key) && $key eq 'NONE';
         if (!ref($key) && $key eq 'ENTER') {
-            my $value = substr($self->{rows}[$row]{text}, $start);
+            my $last = $self->{data_row};
+            ++$last while $self->{rows}[$last + 1] && $self->{rows}[$last + 1]{soft};
+            my $value = substr($self->{rows}[$self->{data_row}]{text}, $self->{data_col});
+            $value .= $self->{rows}[$_]{text} for $self->{data_row} + 1 .. $last;
+            $self->{row} = $last;
+            $self->{col} = length $self->{rows}[$last]{text};
+            $self->{output_row} = $last if defined $self->{output_row};
             $self->append("\n");
             return "$value\n";
         }
         return undef if !ref($key) && ($key eq 'EOF' || $key eq 'ENDINPUT');
         die "Interrupted.\n" if !ref($key) && $key eq 'CANCEL';
         if (ref $key) { $key->[1] =~ s/\n/ /g; $self->edit_key($key); }
-        elsif ($key eq 'LEFT' || $key eq 'BACKSPACE') { $self->edit_key($key) if $self->{col} > $start; }
-        elsif ($key eq 'HOME') { $self->{col} = $start; }
+        elsif ($key eq 'LEFT' || $key eq 'BACKSPACE') {
+            if ($self->{row} > $self->{data_row}
+                || ($self->{row} == $self->{data_row} && $self->{col} > $self->{data_col})) {
+                $self->edit_key($key);
+            }
+        }
+        elsif ($key eq 'HOME') { @{$self}{qw(row col)} = @{$self}{qw(data_row data_col)}; }
         elsif ($key =~ /\A(?:RIGHT|END|DELETE|INSERT|TAB)\z/) { $self->edit_key($key); }
     }
 }
@@ -1502,6 +1685,9 @@ sub session {
             }
             my $continue;
             my $ran = eval { $continue = $repl->dispatch($line); 1 };
+            # Perl/native I/O can move the real cursor after a captured write.
+            # Redraw once after each command even when its model is unchanged.
+            delete $self->{last_frame};
             if (!$ran) { print STDERR $@; }
             elsif (!$continue) { last; }
             $self->fresh;
@@ -1893,6 +2079,64 @@ original terminal display.
 
 =head1 SCREEN EDITING AND MULTILINE INPUT
 
+=head2 The screen is a small sheet of graph paper
+
+The visible screen is the working "VRAM". If your terminal is 80 columns by
+24 rows, that is the whole active work area. There are no extra rows above it
+or columns hiding to the right. New output at the bottom scrolls old rows away.
+Long input and output wrap at the right edge. Wrapped source remains one line
+of Perl; wrapping does not insert a newline into its code.
+
+Think of resizing as changing the size of a sheet of graph paper:
+
+=over 4
+
+=item * Smaller: cells at the right and bottom are cut off.
+
+AnteREPL first keeps one separate copy of the screen, then crops the active
+area and prints a warning. The warning can itself scroll rows away. It tells
+you the terminal size needed for recovery. There is no confirmation question.
+
+=item * Bigger: new cells are empty.
+
+No warning is needed. Cropped text does not come back automatically. The
+saved copy is not active: cursor keys cannot reach it and Enter cannot run it.
+
+=item * RECOVER: ask for the saved sheet back.
+
+Enlarge to at least the dimensions in the warning, then type C<RECOVER>.
+This replaces the current screen with the saved copy, including screen edits
+made before shrinking. It does not merge newer screen text or execute code.
+It refuses if the terminal is still too small. The copy is consumed on success.
+
+=back
+
+Repeated shrinking keeps the first unclaimed copy, so dragging a window edge
+does not replace it with already-cropped text. C<CLS> clears both the active
+screen and this copy. Neither is saved between sessions. Ordinary scrolling
+does not create a recovery copy. The app checks dimensions while waiting for
+input, so resizing does not need a keystroke; running Perl must return control
+or print before the screen can refresh.
+
+An entry damaged by cropping or scrolling cannot be submitted as partial Perl.
+Re-enter it, recover an intact screen, or use C<EDIT> for larger source.
+C<HELP> pauses by screenful; C<LIST PAUSE> and line ranges let you read source
+without losing it above the screen. PageUp and Ctrl-Home stay inside the visible
+area. Plain mode has no screen bank or C<RECOVER>.
+
+The numbered program is a separate notebook. Resizing, scrolling, C<CLS>, and
+C<RECOVER> do not change its source, your variables, functions, or environment.
+C<LIST> copies stored source back onto the screen; C<SAVE> writes that source
+to a file. C<EDIT> opens the stored program, not a picture of the screen.
+
+This follows the C64 screen-editor idea: move through displayed text and press
+Return to submit it. Its character screen was 40 by 25; AnteREPL uses your
+terminal's dimensions. Resizing and the recovery bank are AnteREPL features,
+not C64 hardware emulation. See the original
+L<Commodore 64 User's Guide|https://www.homecomputermuseum.nl/wp-content/uploads/2020/04/Commodore-64_Users-Guide-1982.pdf>.
+
+=head2 Editing visible entries
+
 Interactive mode uses an ANSI screen with no input prompt or shell-style
 command history. New output scrolls the view upward. Arrow keys move the cursor
 through displayed input and output, including LIST output. Edit a numbered row
@@ -1902,14 +2146,14 @@ new output replaces its previous output immediately below the entry, and the
 cursor stays just below the new result. If another entry follows, the cursor
 moves to its start without inserting a blank spacer or erasing that entry.
 Shorter or silent results remove stale output rows; blank lines deliberately
-printed by Perl remain. Later entries and their output remain available;
+printed by Perl remain. Later entries and their output remain while they fit;
 Esc or Ctrl-End moves to fresh input at the bottom. Multiline entries put their
 result below the whole group, even when you press Enter on a row in the middle.
 This changes only the screen display: executing Perl still repeats its normal
 side effects.
 
-C<CLS> clears the display and all retained screen rows, returning the cursor
-to the top left. The stored program ("VRAM"), live Perl variables, C<%ENV>,
+C<CLS> clears the display and resize bank, returning the cursor
+to the top left. The stored program, live Perl variables, C<%ENV>,
 AUTO settings, save filename, unsaved status, and source UNDO remain intact.
 C<LIST> displays the program again; C<RUN> still executes it. C<CLEAR> instead
 erases the stored program, while Ctrl-L only redraws existing screen text.
@@ -1919,13 +2163,12 @@ not C<dumb>; it produces no output when redirected or piped.
 Typing inserts characters by default, including when editing earlier rows;
 Insert switches between insert and overwrite. Backspace/Delete remove characters,
 Home/End move within a row. Left at the start of a row moves to the end of
-the previous row, stopping at the oldest retained row. Empty rows are visited
-one at a time. PageUp/PageDown move through retained screen text.
+the previous row, stopping at the visible top row. Empty rows are visited
+one at a time. PageUp/PageDown move within visible screen text.
 Esc or Ctrl-End returns to a blank row at the bottom; Ctrl-Home visits the
-oldest row. Ctrl-U clears a row, Ctrl-L redraws, and Ctrl-C cancels input or
-interrupts running Perl. The screen retains up to 5,000 output/input rows during
-this session, with no saved history. Long rows scroll horizontally with the
-cursor. Wide/combining Unicode glyphs can misalign the cursor; the editor assumes
+top row. Ctrl-U clears a row, Ctrl-L redraws, and Ctrl-C cancels input or
+interrupts running Perl. There is no saved history. Wide/combining Unicode
+glyphs can misalign the cursor; the editor assumes
 one terminal cell per character.
 
 Shift-Enter or Ctrl-N inserts a newline at the cursor without submitting,
