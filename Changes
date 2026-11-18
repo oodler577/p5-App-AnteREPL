@@ -43,3 +43,9 @@
        growing adds blank space, while RECOVER explicitly restores that copy
      - make CLS forget the resize copy and HELP pause by screenful; document
        the screen, numbered source, and live workspace as separate state
+     - replace command-like bareword errors with uppercase spelling hints;
+       preserve valid Perl keywords, user functions, and prototype behavior
+     - add CD and CHDIR for persistent directory changes; lowercase chdir
+       retains ordinary Perl semantics
+     - show exit instructions after Ctrl-C and use parenthesis-free function
+       calls where appropriate in user examples and human QA/QC exercises

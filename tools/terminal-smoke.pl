@@ -167,6 +167,13 @@ sub pump_for {
 }
 
 wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'startup');
+command('cls', 'REPL commands must be uppercase; use CLS.');
+check(has_line('*** PERL ANTE REPL V0.1 ***'), 'wrong-case cls cleared the screen');
+check(index($transcript, 'Bareword "cls"') < 0, 'command hint leaked an interpreter diagnostic');
+send_text("\x03");
+wait_for(sub { has_line('To leave: QUIT, or QUIT! to discard unsaved source.')
+    && has_line('Ctrl-D exits when AUTO is off and the source is saved.') }, 'idle Ctrl-C explains exit');
+print "PASS: command bareword hints hide interpreter errors; idle Ctrl-C explains how to exit\n";
 command('10 say "old"', '10 say "old"');
 command('LIST', '10 say "old";');
 send_text("\e[A\e[H\x15" . '10 say "new"' . "\r");
@@ -296,7 +303,7 @@ wait_for(sub { has_line('pasted:6') }, 'immediate multiblock paste');
 command('STATUS', '2 lines; unsaved changes; ' . $program . '.');
 command('20 sub twice { return 2 * shift }', '20 sub twice { return 2 * shift }');
 command('RUN', 'auto-line');
-command('say twice(21)', '42');
+command('say twice 21', '42');
 print "PASS: immediate multiline paste waits for Enter, stays out of VRAM, and calls RUN-defined functions\n";
 
 send_text('$incomplete = {' . "\r");
@@ -311,6 +318,7 @@ send_text('say "running-loop"; while (1) {}' . "\r");
 wait_for(sub { has_line('running-loop') }, 'running loop');
 send_text("\x03");
 wait_for(sub { index(substr($transcript, $marker), 'Interrupted.') >= 0 }, 'interrupt running Perl');
+wait_for(sub { has_line('To leave: QUIT, or QUIT! to discard unsaved source.') }, 'running Ctrl-C explains exit');
 print "PASS: Ctrl-C cancels continuation and interrupts execution\n";
 
 command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
@@ -337,7 +345,7 @@ send_text("    return 3 * shift;\r");
 wait_for(sub { has_line('    return 3 * shift;') && $view->{row} == 2 && $view->{col} == 0 }, 'typed function second continuation');
 send_text("}\r");
 wait_for(sub { has_line('}') && $view->{row} == 3 && $view->{col} == 0 }, 'typed closing brace returns to blank row');
-command('say triple(14)', '42');
+command('say triple 14', '42');
 command('STATUS', '0 lines; unchanged; no save filename.');
 my $functions_file = File::Spec->catfile($temporary, 'functions.pl');
 command(qq{SAVE "$functions_file"}, "Saved $functions_file.");
@@ -349,34 +357,34 @@ print "PASS: typed EVAL function closes with Enter and stays callable without en
 command('FUNCTIONS', 'triple');
 check(has_line('twice'), 'FUNCTIONS omitted an earlier RUN-defined function');
 command('EVAL sub triple { return 4 * shift; }', 'Subroutine triple redefined at PERL_ANTE_REPL_prompt line 1.');
-command('say triple(14)', '56');
+command('say triple 14', '56');
 print "PASS: FUNCTIONS lists live names and redefinition warns without confirmation\n";
 command('RESET', 'Perl workspace reset; program retained.');
 command('EVAL sub triple { 3 * shift }', 'EVAL sub triple { 3 * shift }');
 send_text("CLS\r");
 wait_for(sub { !grep { length } $view->lines }, 'clear screen for resubmission checks');
-command('say triple(14)', '42');
-send_text("\e[A\e[A\e[F\e[D\x7f\x7f3\r");
-wait_for(sub { has_line('say triple(3)') && has_line('9') && $view->{row} == 2 }, 'replace earlier result');
+command('say triple 14', '42');
+send_text("\e[A\e[A\e[F\x7f\x7f3\r");
+wait_for(sub { has_line('say triple 3') && has_line('9') && $view->{row} == 2 }, 'replace earlier result');
 check(!has_line('42'), 'old result remained on screen');
 for (1 .. 3) {
     send_text("\e[A\e[A\r");
     pump_for(0.1);
-    check(join('|', $view->lines) eq join('|', 'say triple(3)', '9', ('') x 14), 'repeated result accumulated rows');
+    check(join('|', $view->lines) eq join('|', 'say triple 3', '9', ('') x 14), 'repeated result accumulated rows');
 }
 command('say "later-result"', 'later-result');
-send_text("\e[1;5H\e[F\e[D\e[D1\r");
-wait_for(sub { has_line('say triple(13)') && has_line('39') && $view->{row} == 2
+send_text("\e[1;5H\e[F\e[D1\r");
+wait_for(sub { has_line('say triple 13') && has_line('39') && $view->{row} == 2
     && ($view->lines)[2] eq 'say "later-result"' }, 'insert into earlier input without a spacer');
-check(join('|', $view->lines) eq join('|', 'say triple(13)', '39', 'say "later-result"', 'later-result', ('') x 12),
+check(join('|', $view->lines) eq join('|', 'say triple 13', '39', 'say "later-result"', 'later-result', ('') x 12),
     'replacement inserted a spacer, lost later entries, or left stale output');
-send_text("\e[1;5H\e[F\e[D\x7f4\r");
-wait_for(sub { has_line('say triple(14)') && has_line('42') && $view->{row} == 2
+send_text("\e[1;5H\e[F\x7f4\r");
+wait_for(sub { has_line('say triple 14') && has_line('42') && $view->{row} == 2
     && ($view->lines)[2] eq 'say "later-result"' }, 'prepare exact 14-to-13 edit');
-send_text("\e[1;5H\e[F\e[D\x7f3\r");
-wait_for(sub { has_line('say triple(13)') && has_line('39') && $view->{row} == 2
+send_text("\e[1;5H\e[F\x7f3\r");
+wait_for(sub { has_line('say triple 13') && has_line('39') && $view->{row} == 2
     && ($view->lines)[2] eq 'say "later-result"' }, 'exact 14-to-13 edit without a spacer');
-check(join('|', $view->lines) eq join('|', 'say triple(13)', '39', 'say "later-result"', 'later-result', ('') x 12),
+check(join('|', $view->lines) eq join('|', 'say triple 13', '39', 'say "later-result"', 'later-result', ('') x 12),
     '14-to-13 edit added a blank row before the following command');
 send_text("\e[1;5F");
 wait_for(sub { $view->{row} == 4 && $view->{col} == 0 }, 'Ctrl-End after resubmission');
@@ -387,7 +395,7 @@ send_text("\e[H\e[D");
 wait_for(sub { $view->{row} == 2 && $view->{col} == length('say "later-result"') }, 'Left from output to command end');
 send_text("\e[1;5H\e[D");
 wait_for(sub { $view->{row} == 0 && $view->{col} == 0 }, 'Left stops on first row');
-check(has_line('say triple(13)') && has_line('39') && has_line('say "later-result"') && has_line('later-result'),
+check(has_line('say triple 13') && has_line('39') && has_line('say "later-result"') && has_line('later-result'),
     'Left crossing a row boundary changed screen text');
 print "PASS: Left crosses to the previous row end and stops at the first row\n";
 send_text("\x04");
@@ -404,6 +412,9 @@ send_text("\x04");
 wait_for(sub { index($transcript, 'AUTO off.') >= 0 }, 'plain Ctrl-D ends AUTO');
 send_text("RUN\n");
 wait_for(sub { index($transcript, "\r\nplain-stored\r\n") >= 0 }, 'plain session remains usable');
+$marker = length $transcript;
+send_text("\x03");
+wait_for(sub { index(substr($transcript, $marker), 'To leave: QUIT, or QUIT!') >= 0 }, 'plain Ctrl-C explains exit');
 $marker = length $transcript;
 send_text("AUTO\n\$unfinished_plain = {\n");
 wait_for(sub { index(substr($transcript, $marker), 'AUTO 10, step 5.') >= 0 }, 'plain AUTO restarted');
@@ -431,6 +442,10 @@ command('$runs = 0; say ++$runs', '1');
 my $wide = 'wide:' . ('x' x 60);
 command('say "wide:" . ("x" x 60)', $wide);
 command('say "row:$_" for 1..10', 'row:10');
+# The last printed row may arrive before fresh() adds the blank input row and
+# scrolls a full screen. Snapshot only after that final cursor position.
+wait_for(sub { $view->{row} == 15 && $view->{col} == 0
+    && ($view->lines)[15] eq '' && has_line('row:10') }, 'resize fixture ready for input');
 my $original_screen = screen_text();
 resize_terminal(10, 40);
 wait_for(sub { has_prefix('# Screen clipped; RECOVER') }, 'idle terminal shrink warning');

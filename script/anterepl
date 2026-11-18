@@ -39,6 +39,12 @@ Enlarge to the size in the warning and use RECOVER to restore the copy;
 restoration is never automatic. CLS clears the screen and its recovery copy.
 The numbered program and live Perl values are unaffected by screen resizing.
 
+CD and CHDIR change the session directory; lowercase C<chdir> remains Perl.
+A mistaken C<cls> bareword receives an uppercase spelling hint. Valid keywords
+and function calls retain Perl semantics, including C<say triple 14> and
+prototype-based calls. Ctrl-C cancels or interrupts, then explains how to
+leave with QUIT, QUIT!, or Ctrl-D.
+
 See L<App::AnteREPL> for the full command reference and screen controls.
 
 =head1 AUTHOR

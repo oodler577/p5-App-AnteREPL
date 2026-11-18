@@ -33,6 +33,10 @@ All REPL commands and subcommands are uppercase, including `LIST`, `AUTO OFF`,
 it executes with AUTO off and is stored with AUTO on. Filenames, environment
 names, values, and Perl code retain their case. `EVAL` executes immediately;
 lowercase `eval` is ordinary Perl.
+A command-like bareword such as `cls` gets a short `use CLS` spelling hint.
+`CD directory` and `CHDIR directory` change this session's directory; ordinary
+Perl such as `chdir $ENV{HOME}` still works. Ctrl-C cancels or interrupts and
+reminds you how to leave with `QUIT`, `QUIT!`, or Ctrl-D.
 Shift+Enter (when the terminal distinguishes it) or Ctrl-N inserts a newline
 without submitting, including inside an editable multiline EVAL block.
 `EVAL sub triple { return 3 * shift; }` defines a session-only function in the
@@ -40,6 +44,8 @@ current workspace. Immediate code and `RUN` can call it; it does not enter
 the numbered program or appear in `SAVE`. `FUNCTIONS` lists defined functions
 in the current workspace, including imports. Redefining a named subroutine
 replaces it with Perl's usual warning; no confirmation is required.
+Call it as `say triple 14`. Bare calls use Perl's normal precedence and
+prototype rules; parentheses remain available when needed for grouping.
 
 ## A screen-sized work area
 

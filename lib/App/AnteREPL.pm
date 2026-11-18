@@ -81,6 +81,43 @@ sub recover_screen {
     $self->{screen}->recover_display;
 }
 
+sub change_directory {
+    my ($self, $tail) = @_;
+    my ($path) = _args($tail, 0, 1, 'CD [directory] or CHDIR [directory]');
+    if (!defined $path) {
+        $path = $ENV{HOME};
+        $path = $ENV{USERPROFILE} if (!defined $path || !length $path) && $^O eq 'MSWin32';
+        die "No home directory is set; use CD directory.\n" unless defined $path && length $path;
+    }
+    die "Directory paths cannot contain NUL bytes.\n" if $path =~ /\0/;
+    chdir $path or die "Cannot change directory to '$path': $!\n";
+}
+
+sub _command_case_error {
+    my ($self, $line, $error) = @_;
+    return $error if $line =~ /\n/;
+    return $error unless $line =~ /\A\s*([A-Za-z][A-Za-z0-9_]*)(!?)(?=\s|;|\z)/;
+    my ($word, $force) = ($1, $2);
+    # These spellings belong to Perl even when their use raises an error.
+    return $error if $word =~ /\A(?:chdir|delete|dump|eval|exit|reset)\z/;
+    my $upper = uc $word;
+    return $error if $word eq $upper;
+    return $error unless $upper =~ /\A(?:AUTO|ENV|LIST[0-9]*|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL|DUMP|PEEK|CD|CHDIR)\z/;
+    {
+        no strict 'refs';
+        return $error if defined &{ $self->{workspace} . '::' . $word };
+    }
+    return $error unless $error =~ /\ABareword "\Q$word\E" not allowed while "strict subs" in use at PERL_ANTE_REPL_prompt line [0-9]+\b/;
+    return "REPL commands must be uppercase; use $upper$force.\n";
+}
+
+sub _input_error {
+    my ($error) = @_;
+    return $error unless $error eq "Interrupted.\n";
+    return $error . "To leave: QUIT, or QUIT! to discard unsaved source.\n"
+        . "Ctrl-D exits when AUTO is off and the source is saved.\n";
+}
+
 sub _number {
     my ($number) = @_;
     die "Line numbers must be integers from 1 to $max_line.\n"
@@ -604,7 +641,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|CD|CHDIR)\b/;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -648,6 +685,8 @@ sub help {
 PERL ANTE REPL V0.1 / App::AnteREPL
 All REPL commands and subcommands must be uppercase, including DUMP and PEEK.
 Lowercase/mixed-case input is ordinary Perl: executed, or stored during AUTO.
+A bareword error matching a command gives an uppercase spelling hint instead.
+Valid Perl keywords and user functions keep their normal meaning.
 Quote filenames and values containing spaces.
 
 ENTERING AND RUNNING PERL
@@ -757,7 +796,11 @@ SHELL AND EXIT
                         closed stdin. Examples: ! pwd, ! env, ! cat filename.
   !! command            Give an interactive command the real terminal; press
                         Enter afterward to return. Plain mode uses normal I/O.
-  chdir '/path'         Perl changes this session's directory; ! cd cannot.
+  CD [directory]        Change this session's directory; CHDIR is an alias.
+                        Quote spaces. No argument uses HOME (USERPROFILE on
+                        Windows if HOME is unset). Paths are literal.
+  chdir '/path'         Ordinary Perl also works, including chdir $ENV{HOME}.
+                        ! cd changes only its child shell's directory.
   HELP                  Display this complete reference; pause by screenful.
                         Plain mode prints it all without pauses.
   QUIT / EXIT           Exit on a fresh line; protect unsaved source unless !.
@@ -780,6 +823,7 @@ SCREEN KEYS
   Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: visible top row.
   Ctrl-U / Ctrl-L       Clear current row / redraw screen.
   Ctrl-C                Cancel input/end AUTO, or interrupt running Perl.
+                        Show a reminder of QUIT, QUIT!, and Ctrl-D to leave.
   Ctrl-D                End AUTO/cancel input; otherwise exit if source saved.
 
   The visible screen is the working "VRAM": no off-screen rows or columns.
@@ -843,7 +887,7 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
+    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL|CD|CHDIR)(!?)(?:\s+(.*?))?\s*\z/s) {
         my ($command, $force, $tail) = ($1, $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
@@ -853,6 +897,7 @@ sub dispatch {
         }
         elsif ($command eq 'AUTO') { $self->auto_mode($tail); }
         elsif ($command eq 'ENV') { $self->environment($tail); }
+        elsif ($command eq 'CD' || $command eq 'CHDIR') { $self->change_directory($tail); }
         elsif ($command eq 'EDIT' && $tail eq 'ENV') { $self->environment('EDIT'); }
         elsif ($command eq 'LIST') {
             $self->list_program($tail);
@@ -912,7 +957,11 @@ sub dispatch {
         return 1;
     }
     if ($self->{auto}) { $self->auto_store($line); }
-    else { $self->evaluate($line, 0); }
+    else {
+        local $@;
+        my $ok = eval { $self->evaluate($line, 0); 1 };
+        die $self->_command_case_error($line, $@) unless $ok;
+    }
     return 1;
 }
 
@@ -971,7 +1020,7 @@ sub main {
         if (!$read_ok) {
             my $error = $@;
             print STDERR "AUTO off.\n" if delete $self->{auto};
-            print STDERR $error;
+            print STDERR _input_error($error);
             $had_error = 1;
             next;
         }
@@ -990,7 +1039,7 @@ sub main {
         }
         my $continue;
         my $ok = eval { $continue = $self->dispatch($line); 1 };
-        if (!$ok) { print STDERR $@; $had_error = 1; next; }
+        if (!$ok) { print STDERR _input_error($@); $had_error = 1; next; }
         if (!$continue) { print "\n"; last; }
     }
     return $interactive ? 0 : $had_error;
@@ -1308,8 +1357,8 @@ sub list_rows {
     return unless @$rows;
     $self->dimensions;
     my $controlled = @$rows > $self->{height} - 1 || $mode ne 'normal';
-    my ($slow, $paused, $stop, $page_count) = ($mode eq 'slow', 0, 0, 0);
-    local $SIG{INT} = sub { $stop = 1 };
+    my ($slow, $paused, $stop, $page_count, $cancelled) = ($mode eq 'slow', 0, 0, 0, 0);
+    local $SIG{INT} = sub { $stop = $cancelled = 1 };
     my $ok = eval {
         LINE: for my $index (0 .. $#$rows) {
             last if $stop;
@@ -1334,6 +1383,7 @@ sub list_rows {
                 my $key = $self->key($paused ? 0.1 : $remaining);
                 next if !ref($key) && $key eq 'NONE';
                 if ((!ref($key) && $key =~ /\A(?:CANCEL|EOF|ESC)\z/) || (ref($key) && $key->[0] eq 'TEXT' && $key->[1] =~ /\A[qQ]\z/)) {
+                    $cancelled = 1 if !ref($key) && $key eq 'CANCEL';
                     $stop = 1;
                     last;
                 }
@@ -1359,6 +1409,7 @@ sub list_rows {
     $self->{out}->clearerr if $self->{out};
     $self->render;
     die $error unless $ok;
+    die "Interrupted.\n" if $cancelled;
 }
 
 sub byte {
@@ -1676,7 +1727,7 @@ sub session {
                 $self->{out}->clearerr;
                 $self->fresh(1);
                 print STDERR "AUTO off.\n" if delete $repl->{auto};
-                print STDERR $error;
+                print STDERR App::AnteREPL::_input_error($error);
                 next;
             }
             if (!defined $line) {
@@ -1688,7 +1739,7 @@ sub session {
             # Perl/native I/O can move the real cursor after a captured write.
             # Redraw once after each command even when its model is unchanged.
             delete $self->{last_frame};
-            if (!$ran) { print STDERR $@; }
+            if (!$ran) { print STDERR App::AnteREPL::_input_error($@); }
             elsif (!$continue) { last; }
             $self->fresh;
         }
@@ -1780,10 +1831,46 @@ Aliases such as C<DELETE>, C<REORDER>, C<CLEAR>, and C<EXIT> follow the same rul
 Lowercase and mixed-case words are ordinary Perl, not command aliases. With
 AUTO off they are evaluated; with AUTO on they are stored as source. Perl's
 lowercase C<eval> keeps its normal behavior, and a user-defined C<list> function
-can be called normally. An undefined name can produce a normal Perl error.
+can be called normally. If immediate input fails with a bareword error and its
+first word matches a REPL command, the interpreter error is replaced with a
+short spelling hint, for example:
+
+    cls
+    REPL commands must be uppercase; use CLS.
+
+The command is not executed automatically. Valid Perl keywords, including
+C<eval>, C<chdir>, C<delete>, and C<reset>, retain their normal meaning and
+diagnostics. Defined functions keep their own diagnostics too. Unknown names,
+explicit C<EVAL> code, and stored source retain normal Perl errors.
 Command arguments retain their case, including filenames, environment names,
 values, and Perl source. C<ENV set> looks up the variable named C<set>;
 C<ENV SET name value> sets a variable.
+
+=head2 Function calls without parentheses
+
+Use ordinary Perl call syntax when the function is already defined:
+
+    EVAL sub triple { 3 * shift }
+    say triple 14
+    42
+
+Prototypes keep Perl's usual parsing rules, including scalar, list, and block
+arguments. AnteREPL does not insert or remove call parentheses:
+
+    EVAL sub scalar_arg ($) { 3 * $_[0] }
+    say scalar_arg 14
+    42
+    EVAL sub total (@) { my $n = 0; $n += $_ for @_; $n }
+    say total 1, 2, 3
+    6
+    EVAL sub apply (&@) { my $f = shift; map { $f->($_) } @_ }
+    say join q{,}, apply { $_[0] * 2 } 1, 2, 3
+    2,4,6
+
+The parentheses in prototype declarations and code-reference calls above are
+intentional. Keep parentheses where Perl requires them or where they clarify
+argument grouping. A prototype declared by RUN is also available to later
+immediate calls.
 
 =head1 AUTO ENTRY
 
@@ -1831,11 +1918,11 @@ symbol table without adding its definition to the numbered program:
     EVAL sub triple {
         return 3 * shift;
     }
-    say triple(14)
+    say triple 14
 
 Press ordinary Enter after the closing brace. The definition prints nothing;
 the next entry calls it and prints 42. EVAL also works while AUTO is active,
-but leaves AUTO on. Use C<? triple(14)> for an immediate call during AUTO.
+but leaves AUTO on. Use C<? triple 14> for an immediate call during AUTO.
 
 The function lives in the workspace package of this Perl process. It is
 callable by immediate input and RUN, but does not appear in LIST or SAVE.
@@ -1867,7 +1954,7 @@ submitted. The named subroutine remains available afterward. For example:
         sub triple { return 3 * shift; }
     }
     FUNCTIONS
-    say triple(14)
+    say triple 14
 
 Defining C<triple> again replaces the function used by subsequent calls and
 normally prints Perl's C<Subroutine triple redefined> warning. There is no
@@ -2038,13 +2125,32 @@ A definition in stored source becomes callable after RUN evaluates the program:
 
     10 sub twice { return 2 * shift }
     RUN
-    say twice(21)
+    say twice 21
 
 This prints 42. RUN executes the whole program, including other top-level
 statements. LOAD and LIST only deal with source; they do not define functions.
 Editing or deleting source does not change an already defined function until
 it is redefined or RESET selects a fresh workspace. Use LIST or EDIT to revisit
-the stored definition, and C<EVAL say twice(21)> to call it during AUTO.
+the stored definition, and C<EVAL say twice 21> to call it during AUTO.
+
+=head1 DIRECTORIES
+
+CD and its alias CHDIR change AnteREPL's own working directory:
+
+    CD ..
+    CHDIR '/path/to/work'
+    CD 'directory with spaces'
+
+With no argument they use C<HOME>, or C<USERPROFILE> on native Windows if HOME
+is unset. Paths are literal; quote spaces. These commands do not expand shell
+variables or C<~>. A failed change gives an explanation and retains the current
+directory. Lowercase C<chdir> remains ordinary Perl, including expressions:
+
+    chdir $ENV{HOME} or die $!
+
+Relative file commands and future child processes use the changed directory.
+C<! cd ...> changes only its short-lived child shell, not AnteREPL. Neither
+form can change the parent shell's directory.
 
 =head1 FILES AND RECOVERY
 
@@ -2167,7 +2273,9 @@ the previous row, stopping at the visible top row. Empty rows are visited
 one at a time. PageUp/PageDown move within visible screen text.
 Esc or Ctrl-End returns to a blank row at the bottom; Ctrl-Home visits the
 top row. Ctrl-U clears a row, Ctrl-L redraws, and Ctrl-C cancels input or
-interrupts running Perl. There is no saved history. Wide/combining Unicode
+interrupts running Perl. Ctrl-C also shows exit directions: QUIT, QUIT! to
+discard unsaved source, or Ctrl-D when AUTO is off and source is saved.
+There is no saved history. Wide/combining Unicode
 glyphs can misalign the cursor; the editor assumes
 one terminal cell per character.
 

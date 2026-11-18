@@ -26,7 +26,7 @@ sub fails (&) { my ($code) = @_; local $@; eval { $code->(); 1 }; return $@; }
 {
     local %ENV = (case_test => 'value');
     for my $word (qw(AUTO ENV LIST RUN EDIT DEL DELETE RENUM REORDER UNDO SAVE LOAD
-                     IMPORT EXPORT NEW CLEAR CLS RECOVER RESET FUNCTIONS STATUS HELP QUIT EXIT EVAL DUMP PEEK),
+                     IMPORT EXPORT NEW CLEAR CLS RECOVER RESET FUNCTIONS STATUS HELP QUIT EXIT EVAL DUMP PEEK CD CHDIR),
                   'LIST10-50', 'NEW!', 'QUIT!') {
         for my $input (lc($word), ucfirst(lc($word))) {
             my $r = CaseRoute->new;
@@ -95,4 +95,29 @@ is capture { $perl->dispatch(q{eval { die "caught\n" }; say $@}) }, "caught\n\n"
     'lowercase Perl eval retains exception handling';
 like App::AnteREPL::help(), qr/All REPL commands and subcommands must be uppercase/,
     'HELP states the command case rule';
+
+for my $input ('cls', 'Cls', 'cLs', 'list', 'List', 'help', 'status', 'cd', 'Chdir', '  cls;') {
+    my $r = App::AnteREPL->new;
+    my @warnings;
+    my $error;
+    { local $SIG{__WARN__} = sub { push @warnings, @_ }; $error = fails { $r->dispatch($input) }; }
+    my ($word) = $input =~ /([A-Za-z]+)/;
+    is $error, 'REPL commands must be uppercase; use ' . uc($word) . ".\n", "$input gets a clear spelling hint";
+    is_deeply \@warnings, [], "$input emits no interpreter warnings";
+}
+like fails { $perl->dispatch('clss') }, qr/Bareword "clss"/, 'unknown words retain Perl diagnostics';
+my $eval_error = fails { $perl->dispatch('eval )') };
+like $eval_error, qr/syntax error/, 'invalid Perl eval retains its syntax error';
+unlike $eval_error, qr/REPL commands/, 'Perl eval errors are not command hints';
+like fails { $perl->dispatch('delete $value') }, qr/delete argument/, 'Perl delete keeps its own diagnostic';
+like fails { $perl->dispatch('EVAL cls') }, qr/Bareword "cls"/, 'explicit EVAL keeps Perl diagnostics';
+my $stored = App::AnteREPL->new;
+$stored->dispatch('10 cls');
+like fails { $stored->run }, qr/Bareword "cls".*stored line 10/s, 'stored source retains numbered Perl diagnostics';
+my $user = App::AnteREPL->new;
+$user->dispatch('EVAL sub cls () { say "user cls" }');
+is capture { $user->dispatch('cls') }, "user cls\n", 'valid bare function matching a command still executes';
+my $arity = App::AnteREPL->new;
+$arity->dispatch('EVAL sub cls ($) { $_[0] }');
+like fails { $arity->dispatch('cls') }, qr/Not enough arguments/, 'prototype errors for a real function remain Perl errors';
 done_testing;
