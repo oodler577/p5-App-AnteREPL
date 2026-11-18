@@ -3,8 +3,8 @@
 A Beamer tutorial and implementation overview by Brett Estrade, prepared as a
 possible Winter 2026 PCC talk. This is a talk draft, not a claim of conference
 acceptance. It describes App::AnteREPL at implementation commit
-[`f453072a640d`](https://github.com/oodler577/p5-App-AnteREPL/commit/f453072a640d73290fff2deeef42860e5c075cc0)
-and wiki commit `a86a7f8` (November 17, 2026).
+[`6a9c90f7f189`](https://github.com/oodler577/p5-App-AnteREPL/commit/6a9c90f7f189907b6c75911871b015fd8cb5582d)
+and wiki commit `8b190d3` (November 18, 2026).
 
 **44 slides:** 32 main slides and 12 reference slides. The main route is intended
 for about 45 minutes, including short demonstrations, with questions afterward.

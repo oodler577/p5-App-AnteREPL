@@ -88,7 +88,7 @@ Other typing or movement & Stop LIST and pass the key to the editor\\
 \bottomrule
 \end{tabularx}
 \captionline{UTF-8 source. CRLF input becomes LF. Invalid native records, duplicates, NUL, and bare CR are rejected.}
-\note{Reference only. Native .bperl requires the BASIC PERL header; a header also identifies native input under another extension. SAVE and EXPORT replace the named target using a temporary file and rename. A GUI editor must wait for editing to finish. Failure or invalid output leaves source unchanged. An unchanged EDIT preserves numbers. LOAD and EDIT do not syntax-check or execute source.}
+\note{Reference only. Native .bperl requires the PERL ANTE REPL header; legacy BASIC PERL V0.1 headers remain readable. Either header also identifies native input under another extension. SAVE and EXPORT replace the named target using a temporary file and rename. A GUI editor must wait for editing to finish. Failure or invalid output leaves source unchanged. An unchanged EDIT preserves numbers. LOAD and EDIT do not syntax-check or execute source.}
 \end{frame}
 
 \begin{frame}{Reference: environment operations}
@@ -195,14 +195,14 @@ For stored inspection code, call \cmd{Data::Dumper::Dumper} or \cmd{Devel::Peek:
 
 \begin{frame}{Sources and version of this talk}
 \small
-Implementation snapshot: \cmd{f453072a640d} \textemdash{} November 17, 2026.\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f453072a640d73290fff2deeef42860e5c075cc0/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
+Implementation snapshot: \cmd{6a9c90f7f189} \textemdash{} November 18, 2026.\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
 \href{https://github.com/oodler577/p5-App-AnteREPL/wiki}{\textbf{User guide and workflow documentation}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/tree/f453072a640d73290fff2deeef42860e5c075cc0/t}{\textbf{Unit and screen tests}}\hspace{5mm}
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f453072a640d73290fff2deeef42860e5c075cc0/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f453072a640d73290fff2deeef42860e5c075cc0/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
+\href{https://github.com/oodler577/p5-App-AnteREPL/tree/6a9c90f7f189907b6c75911871b015fd8cb5582d/t}{\textbf{Unit and screen tests}}\hspace{5mm}
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6a9c90f7f189907b6c75911871b015fd8cb5582d/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
 \par\vspace{4mm}
 This deck documents an implementation under active UX testing.\par
 The included README explains rehearsal, shorter routes, and Overleaf editing.
-\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot a86a7f8 documents the same Left-navigation behavior. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
+\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot 8b190d3 documents the same Left-navigation behavior. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
 \end{frame}
