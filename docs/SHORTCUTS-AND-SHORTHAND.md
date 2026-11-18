@@ -4,30 +4,26 @@ These features are available from the main branch. Human grammar and terminal
 review continues with the [QA/QC session](HUMAN-QAQC.md). This source update does
 not create a new CPAN release.
 
-## Perl remains Perl
+## Direct shorthand and literal Perl
 
-Shorthand requires an equals sign **followed by a space**. There is no mode to
-switch off before typing ordinary Perl. These are deliberately different:
+Type shorthand directly after E. EVAL always evaluates literal Perl:
 
 ```text
-E = s triple return 3 * shift
+E s triple return 3 * shift
 say triple 14
 42
 
-E s /old/new/
-= a one, two, threee
+EVAL s /old/new/
+a one, two, threee
 ```
 
 The first entry defines a function; the fourth is a real Perl substitution.
 The last assigns persistent `@a`, preserving all three spellings exactly.
-Even `s triple return 3 * shift` is valid Perl: it is a substitution using `t`
-as its delimiter. The explicit marker avoids guessing between those meanings.
-
-Unmarked expressions, including calls, quote operators, prototypes, and Perl
-errors, stay with Perl. `E` evaluates ordinary Perl unless followed by the
-marker; `EVAL` always takes ordinary Perl. `=word` without the space is left to
-Perl, including POD. The existing uppercase command names and shortcuts remain
-REPL commands; this change adds no new bareword interception.
+E reserves the five spaced tags `s`, `a`, `ar`, `h`, and `hr` for definitions.
+Outside those tags, E evaluates Perl as usual: `E say triple 14` works.
+For literal Perl beginning with a reserved tag, type EVAL instead:
+`EVAL s /old/new/` or `EVAL ar "argument"`. Bare Perl keywords and existing
+workspace functions retain their meaning. No persistent mode switch is involved.
 
 ## Command shortcuts
 
@@ -81,9 +77,9 @@ exit directions. Append `!` to bypass the question:
 | Reset / edit / load / reload environment | `V0!`, `V3!`, `V5! vars.env`, `V6!` |
 | Overwrite environment file | `V4! vars.env` |
 | Environment operation through V | `V! SET NAME value` |
-| Replace a shorthand function | `E! = s triple return 4 * shift` |
-| Replace a shorthand container | `E! = a colors green` |
-| Replace a named list | `= colors! green, blue` |
+| Replace a shorthand function | `E! s triple return 4 * shift` |
+| Replace a shorthand container | `E! a colors green` |
+| Replace a named list | `colors! green, blue` |
 | Exit | `Q!` |
 
 New files and new definitions do not prompt. Replacing existing values does;
@@ -107,13 +103,13 @@ or destructive. Forced function redefinition still emits Perl's usual warning.
 
 | Input | Destination |
 |---|---|
-| `E = s triple return 3 * shift` | Function `triple` |
-| `E = a colors red, blue` | Array `@colors` |
-| `E = ar names Ada, Bob` | Array reference `$names` |
-| `E = h options color => blue, count => 3` | Hash `%options` |
-| `E = hr record name => Ada, tags => [one, two]` | Hash reference `$record` |
+| `E s triple return 3 * shift` | Function `triple` |
+| `E a colors red, blue` | Array `@colors` |
+| `E ar names Ada, Bob` | Array reference `$names` |
+| `E h options color => blue, count => 3` | Hash `%options` |
+| `E hr record name => Ada, tags => [one, two]` | Hash reference `$record` |
 
-Tags are lowercase, after `E = `. Names are ASCII identifiers without sigils
+Tags are lowercase, after `E`. Names are ASCII identifiers without sigils
 or namespaces. Functions need a body; data definitions may omit values for an
 empty container. Functions contain ordinary Perl. Advanced declarations such
 as prototypes remain ordinary Perl: `E sub twice ($) { 2 * $_[0] }`.
@@ -127,22 +123,23 @@ they are not `my` variables scoped to a single evaluation.
 With AUTO off:
 
 ```text
-= a one, two, threee
+a one, two, threee
 D \@a
-= settings color => blue, count => 3
+settings color => blue, count => 3
 D \%settings
-= mixed one, q{two,three}, qq{home:$ENV{HOME}}, qw(four five)
+mixed one, q{two,three}, qq{home:$ENV{HOME}}, qw(four five)
 ```
 
-The word after `= ` names the destination. A top-level comma selects an array;
+The first word names the destination. A top-level comma selects an array;
 a top-level arrow selects a hash. Separators inside quotes and nested containers
 do not select a definition by themselves. A one-item array can use
-`E = a colors red` or `= colors red,`. Named destinations start with a lowercase
+`E a colors red` or `colors red,`. Named destinations start with a lowercase
 letter or underscore; explicit typed forms accept either case.
 
-A marked destination remains explicit even if a function has that name.
-Unmarked `a "one", "two"` stays a Perl call. During AUTO, marked named lists
-are rejected with guidance to use `E = a ...`, `E = h ...`, or `A0` first.
+Perl keywords and existing functions take priority over bare destination names.
+If a function named a exists, `a "one", "two"` calls it; `E a a one, two`
+explicitly assigns the array. During AUTO, recognized bare named lists
+are rejected with guidance to use `E a ...`, `E h ...`, or `A0` first.
 Numbered input, colon input, EDIT, IMPORT, LOAD, and RUN remain literal Perl.
 
 ## Consistent value grammar
@@ -176,7 +173,7 @@ The same rules apply recursively to arrays, arrayrefs, hashes, and hashrefs:
 
 ## Errors, continuation, and execution
 
-Malformed marked input receives an `Ambiguous shorthand:` explanation before
+Malformed shorthand receives an `Ambiguous shorthand:` explanation before
 evaluation. Open quotes/containers continue; a mismatched closing delimiter
 reports an error. Ctrl-N or bracketed paste can group a multiline entry.
 
@@ -187,25 +184,25 @@ Typing, rerunning, and pasting follow the same grammar.
 
 ## Human QA/QC checklist
 
-Validation on the DC VM, November 18, 2026: all 1,115 tests in 13 files and all
+Validation on the DC VM, November 18, 2026: all 1,112 tests in 13 files and all
 24 terminal check groups passed. POD checks and a local distribution build/test
 also passed. Confirmation checks cover screen and plain input, cancellation,
 approval, forced exit, and preserved state. Human grammar/UX review remains pending.
 
-1. Enter `E = s triple return 3 * shift`, then `say triple 14`. Expect 42.
+1. Enter `E s triple return 3 * shift`, then `say triple 14`. Expect 42.
    Edit 14 to 13 above and rerun; expect 39 in place.
-2. Enter `= a one, two, threee`, then `D \@a`. All spellings must survive.
+2. Enter `a one, two, threee`, then `D \@a`. All spellings must survive.
 3. Enter each typed definition above; inspect with D. Try empty containers and
    nested values mixing implicit words, single/double quotes, q/qq/qw, and regexes.
-4. Try `E = a colors red-blue`; expect an explanation. Retry with `"red-blue"`.
-   Redefine colors: Enter should cancel, `y` should replace, and `E! = a ...`
+4. Try `E a colors red-blue`; expect an explanation. Retry with `"red-blue"`.
+   Redefine colors: Enter should cancel, `y` should replace, and `E! a ...`
    should replace without asking.
 5. Define an ordinary function named ar with `E sub ar { say $_[0] }`.
-   `E ar "real call"` must call it. Try `E s /old/new/` on a prepared `$_`.
+   `EVAL ar "real call"` must call it. Try `EVAL s /old/new/` on a prepared `$_`.
    Neither requires disabling shorthand.
-6. Try `E = s triple return 4 * shift`. Decline and verify `say triple 14`
-   is still 42; force it with `E! = s ...`, then expect 56 and the normal warning.
-7. Start `A`, enter an ordinary Perl call, then `E = a live one,two`.
+6. Try `E s triple return 4 * shift`. Decline and verify `say triple 14`
+   is still 42; force it with `E! s ...`, then expect 56 and the normal warning.
+7. Start `A`, enter an ordinary Perl call, then `E a live one,two`.
    Only the ordinary call should enter LIST. Finish with `A0`.
 8. In a disposable session, enter `10 say "keep"`, then `D1 10`. Test Enter,
    No, Ctrl-D, Esc (screen mode), and Ctrl-C; LIST must retain the line.

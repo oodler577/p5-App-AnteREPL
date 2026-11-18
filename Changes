@@ -55,5 +55,5 @@
        list grammar; retain literal EVAL and normal Perl in stored source
      - confirm destructive shortcuts by default; ! explicitly bypasses the
        question, including shorthand redefinitions and file overwrites
-     - require an equals-and-space shorthand marker to avoid collisions with
-       valid Perl; support native quote operators consistently in list values
+     - restore direct E s/E a/E ar/E h/E hr and bare named-list shorthand;
+       retain EVAL for literal Perl and native quote operators in list values

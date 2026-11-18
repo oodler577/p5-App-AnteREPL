@@ -667,9 +667,15 @@ sub auto_store {
 sub input_needs_more {
     my ($self, $source) = @_;
     return 0 if $self->{auto} && $source =~ /\A:/;
-    my $more = App::AnteREPL::Shorthand->needs_more($source);
+    my $more = App::AnteREPL::Shorthand->needs_more($source, sub { $self->_has_function($_[0]) });
     return $more if defined $more;
     return needs_more($source);
+}
+
+sub _has_function {
+    my ($self, $name) = @_;
+    no strict 'refs';
+    return defined &{ $self->{workspace} . '::' . $name };
 }
 
 sub reset_workspace {
@@ -792,7 +798,7 @@ sub help {
     return <<'HELP';
 PERL ANTE REPL V0.1 / App::AnteREPL
 All REPL commands and subcommands must be uppercase, including DUMP and PEEK.
-Unmarked expressions remain Perl. Marked list shorthand is described below.
+Perl keywords/functions retain their meaning. List shorthand is described below.
 A bareword error matching a command gives an uppercase spelling hint instead.
 Valid Perl keywords and user functions keep their normal meaning.
 Quote filenames and values containing spaces.
@@ -825,7 +831,7 @@ CONFIRMATION FOR DESTRUCTIVE SHORTCUTS
   approves. Enter, No, Ctrl-D, or Esc (screen mode) cancels; Ctrl-C interrupts.
   Add ! to skip confirmation: D1! 10-30, R2!, S! demo.pl, Q!.
   Supported force forms: C! D1! E1! E2! I! L1! N! Q! R1! R2! R3! S! U!
-  V! V0! V1! V2! V3! V4! V5! V6!; E! for marked definitions only.
+  V! V0! V1! V2! V3! V4! V5! V6!; E! for shorthand definitions only.
   New files and new values do not ask; replacements do. Q always asks.
   Editors prepare changes first, then ask before replacing current state.
   Piped input cannot confirm: add ! explicitly; no following line is consumed.
@@ -833,16 +839,15 @@ CONFIRMATION FOR DESTRUCTIVE SHORTCUTS
   RUN, and shell commands has normal side effects; these are not classified.
 
 IMMEDIATE DEFINITIONS AND LIST SHORTHAND
-  E = s name body       Define a function: E = s triple return 3 * shift.
-  E = a name values     Assign @name. E = ar name values makes an arrayref $name.
-  E = h name pairs      Assign %name. E = hr name pairs makes a hashref $name.
-  = a one, two, threee  Define @a containing the strings one, two, threee.
-  = colors red, blue    Define @colors; = settings color => blue defines %settings.
+  E s name body       Define a function: E s triple return 3 * shift.
+  E a name values     Assign @name. E ar name values makes an arrayref $name.
+  E h name pairs      Assign %name. E hr name pairs makes a hashref $name.
+  a one, two, threee  Define @a containing the strings one, two, threee.
+  colors red, blue    Define @colors; settings color => blue defines %settings.
 
-  Shorthand requires = followed by a space. No mode switch is needed for Perl.
-  E s /old/new/ and even E s triple return 3 * shift remain substitutions.
-  =word (without a space) is left to Perl, including POD syntax.
-  Definition tags s/a/ar/h/hr are lowercase, after E = .
+  E accepts lowercase definition tags s/a/ar/h/hr, followed by a name and body.
+  E s triple return 3 * shift defines triple. EVAL always takes literal Perl.
+  For a spaced substitution, type EVAL s /old/new/. E s/old/new/ also stays Perl.
   Names have letters, digits, underscores; no sigil, namespace, or prototype.
   Data definitions with no values make empty containers. A function needs a body.
   Commas separate values; => separates each hash key/value. Trailing comma OK.
@@ -859,15 +864,16 @@ IMMEDIATE DEFINITIONS AND LIST SHORTHAND
   They use list context in arrays, scalar context for each hash key/value.
   Nothing is executed merely to decide how to interpret input.
 
-  Marked destination lists need a top-level comma or => and AUTO off.
-  Without the marker, normal Perl calls and quoting are never shorthand.
+  Bare destination lists need a top-level comma or => and AUTO off. Perl keywords
+  and existing functions take priority; E a colors red explicitly assigns @colors.
   During AUTO, use explicit E forms; they execute without storing or ending AUTO.
   Values/functions persist between entries. LIST/SAVE do not include them.
   Open quotes/containers continue; Ctrl-N also inserts a line before submission.
   Replacing an existing shorthand destination asks first. Forced examples:
-  E! = s triple return 4 * shift; E! = a colors green; = colors! green, blue.
+  E! s triple return 4 * shift; E! a colors green; colors! green, blue.
   Functions contain ordinary Perl; approved redefinition still warns normally.
-  E and EVAL accept literal Perl, including prototypes and attributes.
+  Outside its five reserved tags, E also evaluates Perl. EVAL always means Perl,
+  including function calls named a/ar/h/hr and declarations with prototypes.
   Ambiguous shorthand is rejected with an explanation. Perl expressions and
   function bodies retain Perl errors, warnings, and any side effects performed.
 
@@ -1160,9 +1166,9 @@ sub dispatch {
         }
         return 1;
     }
-    my $implicit = App::AnteREPL::Shorthand->implicit($line);
+    my $implicit = App::AnteREPL::Shorthand->implicit($line, sub { $self->_has_function($_[0]) });
     if (defined $implicit) {
-        die "List shorthand is immediate input. Try E = a name values or E = h name pairs during AUTO, or A0 first.\n"
+        die "List shorthand is immediate input. Try E a name values or E h name pairs during AUTO, or A0 first.\n"
             if $self->{auto};
         $self->_evaluate_definition($implicit);
     }
@@ -2061,9 +2067,8 @@ C<ENV SET name value> sets a variable.
 
 Immediate definitions and implicit destination lists have the explicit grammar
 under L</SHORTCUTS AND SHORTHAND>. Ordinary Perl remains unchanged in numbered
-source, LOAD, IMPORT, EDIT, and unmarked immediate expressions. Shorthand needs
-an equals sign followed by whitespace; the lowercase definition tags follow
-C<E = > and are distinct from uppercase REPL commands.
+source, LOAD, IMPORT, EDIT, and literal EVAL. The lowercase definition tags
+follow C<E> and are distinct from uppercase REPL commands.
 
 =head1 SHORTCUTS AND SHORTHAND
 
@@ -2110,8 +2115,8 @@ and new values do not ask. Q always asks, even when source is saved, because
 exiting also discards the live workspace. Editors prepare their results before
 asking to apply replacements. Invalid input and unchanged values do not ask.
 
-Marked function/container redefinitions also ask. C<E! = s triple return 4 *
-shift>, C<E! = a colors green>, and C<= colors! green, blue> bypass their
+Shorthand function/container redefinitions also ask. C<E! s triple return 4 *
+shift>, C<E! a colors green>, and C<colors! green, blue> bypass their
 questions. New definitions need no confirmation. Declining leaves existing
 data intact and does not evaluate a replacement's expressions. Approved
 function redefinition retains Perl's usual warning.
@@ -2123,29 +2128,29 @@ normal side effects; the REPL does not infer whether that code is destructive.
 
 =head2 Explicit immediate definitions
 
-C<E = > accepts five lowercase definition tags. The whitespace after the equals
-sign is required, keeping Perl's C<=word> POD syntax available:
+C<E> accepts five lowercase definition tags:
 
-    E = s triple return 3 * shift
+    E s triple return 3 * shift
     say triple 14
     42
-    E = a colors red, blue
-    E = ar names Ada, "Grace Hopper"
-    E = h options color => blue, count => 3
-    E = hr record name => Ada, tags => [one, two]
+    E a colors red, blue
+    E ar names Ada, "Grace Hopper"
+    E h options color => blue, count => 3
+    E hr record name => Ada, tags => [one, two]
 
 These define a function, C<@colors>, C<$names> as an array reference,
 C<%options>, and C<$record> as a hash reference, respectively. Names are plain
 ASCII identifiers without sigils or namespaces. Omit the values to make an
-empty container, for example C<E = ar names>. A function must have a body.
+empty container, for example C<E ar names>. A function must have a body.
 
 Functions contain ordinary Perl, may recurse, and retain normal redefinition
 warnings. Open braces support multiline bodies. Prototypes, attributes, package
 names, and other advanced declarations belong in literal C<EVAL sub ...>.
-Unmarked C<E s /old/new/> is a literal Perl substitution, as is
-C<E s triple return 3 * shift>: Perl permits C<t> as the delimiter there.
-The marker removes this ambiguity. No switch or alternate command is needed
-to return to real Perl. EVAL always takes literal Perl.
+C<E s triple return 3 * shift> defines a function. C<E> reserves the five
+spaced tags for shorthand; C<EVAL> always takes literal Perl. Thus
+C<EVAL s /old/new/> performs a spaced substitution, while C<E s/old/new/>
+also remains Perl because it has no spaced tag. Other ordinary Perl, such as
+C<E say triple 14>, works directly with E.
 
 Definitions are immediate and persist in the workspace between evaluations.
 They do not enter LIST or SAVE, including during AUTO; AUTO remains active.
@@ -2153,21 +2158,21 @@ These are package variables, rather than lexicals limited to one evaluation.
 
 =head2 Named lists with implicit quoting
 
-With AUTO off, C<= > followed by a lowercase-leading destination name and a
-top-level comma-separated list names an array. An arrow selects a hash:
+With AUTO off, a lowercase-leading destination name followed by a top-level
+comma-separated list names an array. An arrow selects a hash:
 
-    = a one, two, threee
+    a one, two, threee
     D \@a
-    = settings color => blue, count => 3
+    settings color => blue, count => 3
     D \%settings
 
 The first entry assigns C<@a = ('one', 'two', 'threee')>. Spelling is preserved.
-Unmarked input always stays Perl, including calls to functions named C<a>,
-C<ar>, C<h>, or C<hr>. Marked definitions explicitly select a destination,
-even if a function has the same name. At least one top-level comma or arrow
-is required for the named-list form. C<E = a names Ada> handles a one-item
-list. During AUTO, a marked named list is rejected with directions to use an
-explicit C<E = > definition or leave AUTO. Numbered and file source stay literal.
+Perl keywords and existing workspace functions take priority over bare
+destination names. Explicit C<E a ...> and C<E h ...> definitions select a
+destination even if a function has the same name. At least one top-level comma or arrow
+is required for the named-list form. C<E a names Ada> handles a one-item
+list. During AUTO, a recognized named list is rejected with directions to use an
+explicit C<E> definition or leave AUTO. Numbered and file source stay literal.
 
 =head2 The value grammar
 
@@ -2218,8 +2223,9 @@ Unquoted punctuation or multiword values are not guessed. An ambiguous entry
 gets a friendly explanation and is rejected before evaluation. Nothing is
 compiled or run to classify input. Once accepted, explicit Perl expressions
 and function bodies execute once with normal warnings/errors and side effects;
-those effects are not rolled back. Without a shorthand marker, E and ordinary
-immediate input accept Perl directly. Stored programs are never rewritten.
+those effects are not rolled back. EVAL always accepts literal Perl; E reserves
+its five shorthand tags and otherwise evaluates Perl. Stored programs are never
+rewritten as shorthand.
 
 =head2 Function calls without parentheses
 

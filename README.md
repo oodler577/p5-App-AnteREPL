@@ -45,7 +45,7 @@ current workspace. Immediate code and `RUN` can call it; it does not enter
 the numbered program or appear in `SAVE`. `FUNCTIONS` lists defined functions
 in the current workspace, including imports. Redefining a named subroutine
 through ordinary Perl replaces it with the usual warning, without confirmation.
-Marked shorthand redefinitions ask first, as described below.
+Shorthand redefinitions ask first, as described below.
 Call it as `say triple 14`. Bare calls use Perl's normal precedence and
 prototype rules; parentheses remain available when needed for grouping.
 
@@ -60,19 +60,20 @@ not prompt. Piped input requires `!` for a destructive shortcut.
 Immediate definitions include:
 
 ```text
-E = s triple return 3 * shift
-E = a colors red, blue
-E = ar names Ada, Bob
-E = h options color => blue
-E = hr record name => Ada
+E s triple return 3 * shift
+E a colors red, blue
+E ar names Ada, Bob
+E h options color => blue
+E hr record name => Ada
 ```
 
-With AUTO off, `= a one, two, threee` defines persistent `@a` with those exact
-strings. The equals sign followed by a space explicitly selects shorthand;
-unmarked expressions remain Perl without any mode switch. Normal quotes and
-q/qq/qw/regex operators work inside marked lists too. Other Perl expressions
-go in parentheses. Replacing existing destinations asks first; `E! = a colors
-green` and `= colors! green, blue` force replacement. Literal EVAL and arbitrary
+With AUTO off, `a one, two, threee` defines persistent `@a` with those exact
+strings. Perl keywords and existing functions take priority over bare destination
+names. E reserves the five spaced definition tags; EVAL always accepts literal
+Perl. Normal quotes and q/qq/qw/regex operators work inside shorthand lists.
+Other Perl expressions
+go in parentheses. Replacing existing destinations asks first; `E! a colors
+green` and `colors! green, blue` force replacement. Literal EVAL and arbitrary
 Perl retain their usual side effects. See [the complete grammar and review checklist](docs/SHORTCUTS-AND-SHORTHAND.md).
 For a hands-on test session, follow [the human QA/QC walkthrough](docs/HUMAN-QAQC.md).
 

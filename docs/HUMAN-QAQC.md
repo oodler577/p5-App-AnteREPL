@@ -13,7 +13,7 @@ screen row. Record the first unexpected result, exact input, and terminal dimens
 ## 1. Screen editing and output replacement
 
 ```text
-E = s triple return 3 * shift
+E s triple return 3 * shift
 say triple 14
 say "keep this line below"
 ```
@@ -38,13 +38,13 @@ H displays complete HELP with screenful pauses. Stop the listing with lowercase
 
 ```text
 $count = 2
-= a one, two, threee
+a one, two, threee
 D \@a
-= colors red, q{dark blue}, qq{value:$count}, qw(green white)
+colors red, q{dark blue}, qq{value:$count}, qw(green white)
 D \@colors
-E = ar names Ada, Bob
-E = h options color => blue, count => 3
-E = hr record name => Ada, tags => [one, two]
+E ar names Ada, Bob
+E h options color => blue, count => 3
+E hr record name => Ada, tags => [one, two]
 D $names
 D \%options
 D $record
@@ -53,7 +53,7 @@ P $record
 
 Expect exact spellings, including `threee`; colors contains `red`, `dark blue`,
 `value:2`, `green`, `white`. D shows the expected structures; P shows Devel::Peek
-internals. The space after `=` is required. These values are absent from LIST.
+internals. These values are absent from LIST.
 
 ## 4. Multiline immediate code
 
@@ -74,36 +74,36 @@ Shift-Enter should do likewise if the terminal sends a distinct key sequence.
 
 ```text
 $_ = "red"
-E s /red/blue/
+EVAL s /red/blue/
 say $_
 E sub ar ($) { say $_[0] }
-E ar "ordinary call"
+EVAL ar "ordinary call"
 say join q{:}, qw(one two)
 E sub twice ($) { 2 * $_[0] }
 say twice 21
 ```
 
-Expect `blue`, `ordinary call`, `one:two`, and 42. No mode change is needed for
-real quoting, a function named ar, or prototype-based calls.
+Expect `blue`, `ordinary call`, `one:two`, and 42. EVAL evaluates literal Perl;
+E reserves the five shorthand tags. No persistent mode change is needed.
 
 ## 6. Redefinition and cancellation
 
-Enter `E = s triple return 4 * shift`. At `[y/N]`, press Enter.
+Enter `E s triple return 4 * shift`. At `[y/N]`, press Enter.
 `say triple 14` must still print 42. Repeat the definition and answer `y`;
 expect the usual redefinition warning, and then 56.
 
 ```text
-E! = s triple return 3 * shift
+E! s triple return 3 * shift
 say triple 14
-E = a colors (die "must not run")
+E a colors (die "must not run")
 ```
 
 The forced definition does not ask, still warns, and restores 42. Decline the
 colors replacement: the expression must not run and colors must remain intact.
-Then try `= colors! green, blue`; it replaces colors without asking.
+Then try `colors! green, blue`; it replaces colors without asking.
 
-`E = a bad red-blue` must give a friendly ambiguity explanation. Retry as
-`E = a bad "red-blue"`; D should show the literal string.
+`E a bad red-blue` must give a friendly ambiguity explanation. Retry as
+`E a bad "red-blue"`; D should show the literal string.
 
 ## 7. AUTO, numbering, and aligned LIST
 
@@ -111,7 +111,7 @@ Then try `= colors! green, blue`; it replaces colors without asking.
 A 5 5
 say "first"
 say "second"
-E = a live one, two
+E a live one, two
 ```
 
 Press Ctrl-D to end AUTO, then:
@@ -231,4 +231,4 @@ and Ctrl-C should still cancel destructive questions in plain mode.
 Piped input is covered by automated tests: it cannot confirm, never consumes the
 next command as an answer, and requires explicit `!` for destructive shortcuts.
 
-Automated baseline: 1,115 tests in 13 files; 24 terminal check groups passed.
+Automated baseline: 1,112 tests in 13 files; 24 terminal check groups passed.

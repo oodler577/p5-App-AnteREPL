@@ -150,7 +150,7 @@ sub _hash {
 sub _definition {
     my ($type, $name, $body) = @_;
     if ($type eq 's') {
-        _fail('a function body is missing; try E = s name return expression') unless $body =~ /\S/;
+        _fail('a function body is missing; try E s name return expression') unless $body =~ /\S/;
         _fail("'$name' is a Perl keyword; choose another function name") if perl_keyword($name);
         return "sub $name {\n$body\n}";
     }
@@ -163,11 +163,8 @@ sub _definition {
 
 sub explicit {
     my ($class, $line) = @_;
-    return unless $line =~ /\A\s*E(!?)\s+=\s+(.*)\z/s;
-    my ($force, $definition) = ($1, $2);
-    _fail('expected a definition tag: s, a, ar, h, or hr')
-        unless $definition =~ /\A(s|a|ar|h|hr)(?=\s|\z)(.*)\z/s;
-    my ($type, $tail) = ($1, $2);
+    return unless $line =~ /\A\s*E(!?)\s+(s|a|ar|h|hr)(?=\s|\z)(.*)\z/s;
+    my ($force, $type, $tail) = ($1, $2, $3);
     $tail =~ s/;\s*\z// if $type ne 's';
     _fail("$type needs a plain destination name, without a sigil")
         unless $tail =~ /\A\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z/s;
@@ -176,34 +173,34 @@ sub explicit {
 }
 
 sub _implicit_candidate {
-    my ($line) = @_;
-    return unless $line =~ /\A\s*=\s+/;
-    _fail('a named list needs a lowercase-leading destination and values')
-        unless $line =~ /\A\s*=\s+([a-z_][A-Za-z0-9_]*)(!?)\s+(.+)\z/s;
+    my ($line, $is_function) = @_;
+    return unless $line =~ /\A\s*([a-z_][A-Za-z0-9_]*)(!?)\s+(.+)\z/s;
     my ($name, $force, $body) = ($1, $2, $3);
+    return if perl_keyword($name) || (!$force && $is_function && $is_function->($name));
+    return if $body =~ /\A=>/; # Perl's autoquoted hash key, not a destination.
+    return unless $body =~ /,|=>/;
     return ($name, $body, $force);
 }
 
 sub implicit {
-    my ($class, $line) = @_;
-    my ($name, $body, $force) = _implicit_candidate($line);
+    my ($class, $line, $is_function) = @_;
+    my ($name, $body, $force) = _implicit_candidate($line, $is_function);
     return unless defined $name;
     $body =~ s/;\s*\z//; # One optional statement terminator, outside the values.
     my @commas = _split($body, ',');
     my @arrows = _split($body, '=>');
-    _fail('a named list needs a top-level comma or key => value; try E = a name value')
-        unless @commas > 1 || @arrows > 1;
+    return unless @commas > 1 || @arrows > 1;
     my $type = @arrows > 1 ? 'h' : 'a';
-    return { code=>_definition($type, $name, $body), type=>$type, name=>$name, force=>$force, label=>'= ' . $name };
+    return { code=>_definition($type, $name, $body), type=>$type, name=>$name, force=>$force, label=>$name };
 }
 
 sub needs_more {
-    my ($class, $line) = @_;
+    my ($class, $line, $is_function) = @_;
     my $body;
-    if ($line =~ /\A\s*E!?\s+=\s+(?:a|ar|h|hr)\s+[A-Za-z_][A-Za-z0-9_]*\s+(.*)\z/s) {
+    if ($line =~ /\A\s*E!?\s+(?:a|ar|h|hr)\s+[A-Za-z_][A-Za-z0-9_]*\s+(.*)\z/s) {
         $body = $1;
     }
-    else { (undef, $body) = _implicit_candidate($line); }
+    else { (undef, $body) = _implicit_candidate($line, $is_function); }
     return unless defined $body;
     local $@;
     my $ok = eval { _split($body, ','); 1 };

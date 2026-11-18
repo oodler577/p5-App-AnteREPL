@@ -127,7 +127,7 @@ ok $screen->{resize_bank}, 'declined recovery retains bank';
 $r->dispatch('R3!');
 is $screen->{rows}[0]{text}, 'banked', 'R3! restores bank';
 delete $r->{screen};
-$r->dispatch('E = s live return 9');
+$r->dispatch('E s live return 9');
 my $workspace = $r->{workspace};
 is fails { $r->dispatch('R2') }, "Cancelled.\n", 'workspace reset confirms';
 is $r->{workspace}, $workspace, 'declined reset keeps live package';
@@ -177,13 +177,13 @@ is asked($r), $calls, 'Q! does not ask';
 }
 
 my $d = ConfirmRepl->new;
-$d->dispatch('E = s triple return 3 * shift');
+$d->dispatch('E s triple return 3 * shift');
 is asked($d), 0, 'new function needs no confirmation';
-is fails { $d->dispatch('E = s triple return 4 * shift') }, "Cancelled.\n", 'function shorthand redefinition confirms';
+is fails { $d->dispatch('E s triple return 4 * shift') }, "Cancelled.\n", 'function shorthand redefinition confirms';
 is $d->evaluate('triple 14',0), 42, 'declining retains old function';
 my @warnings;
 { local $SIG{__WARN__} = sub { push @warnings, @_ };
-  $d->dispatch('E! = s triple return 4 * shift'); }
+  $d->dispatch('E! s triple return 4 * shift'); }
 like join('', @warnings), qr/Subroutine triple redefined/, 'force bypasses confirmation but retains Perl warning';
 is $d->evaluate('triple 14',0), 56, 'forced function replaces old definition';
 $d->dispatch('$effects = 0');
@@ -193,20 +193,20 @@ for my $case (
     my ($type,$name,$expression) = @$case;
     my $values = $type =~ /^h/ ? 'key => old' : 'old';
     my $replacement = $type =~ /^h/ ? 'key => (do { ++$effects; "new" })' : '(do { ++$effects; "new" })';
-    $d->dispatch("E = $type $name $values");
+    $d->dispatch("E $type $name $values");
     my $before = capture { $d->dispatch("D $expression") };
-    is fails { $d->dispatch("E = $type $name $replacement") }, "Cancelled.\n", "$type replacement confirms";
+    is fails { $d->dispatch("E $type $name $replacement") }, "Cancelled.\n", "$type replacement confirms";
     is capture { $d->dispatch("D $expression") }, $before, "$type cancellation preserves destination";
     is $d->evaluate('$effects',0), 0, "$type cancellation runs no value expression";
 }
-$d->dispatch('= words one, two');
-is fails { $d->dispatch('= words three, four') }, "Cancelled.\n", 'implicit destination replacement confirms';
-$d->dispatch('= words! three, four');
+$d->dispatch('words one, two');
+is fails { $d->dispatch('words three, four') }, "Cancelled.\n", 'implicit destination replacement confirms';
+$d->dispatch('words! three, four');
 is_deeply $d->evaluate('\@words',0), [qw(three four)], 'name! forces implicit replacement';
-ok $d->input_needs_more('E! = ar nested [one,'), 'forced explicit shorthand still continues';
-ok $d->input_needs_more('= words! one, [two,'), 'forced implicit shorthand still continues';
+ok $d->input_needs_more('E! ar nested [one,'), 'forced explicit shorthand still continues';
+ok $d->input_needs_more('words! one, [two,'), 'forced implicit shorthand still continues';
 my $tied = $d->evaluate('tie $tied_destination, "ConfirmTie"', 0);
-is fails { $d->dispatch('E = ar tied_destination new') }, "Cancelled.\n", 'tied destination also confirms';
+is fails { $d->dispatch('E ar tied_destination new') }, "Cancelled.\n", 'tied destination also confirms';
 is_deeply $tied, {fetch=>0,store=>0}, 'declining invokes neither FETCH nor STORE';
 
 my $batch = App::AnteREPL->new;
