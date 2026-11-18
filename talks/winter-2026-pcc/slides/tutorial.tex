@@ -13,7 +13,7 @@
 {\color{TerminalText}\large Brett Estrade}\par
 \par\vspace{2mm}
 {\color{Lavender}\small Winter 2026 PCC \textemdash{} talk draft}
-\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit f0dbd0e from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
+\note{Opening, about one minute. This is a practical Perl workbench inspired by the experience of editing code directly on a BASIC screen. The application is App::AnteREPL and the executable is anterepl. The banner reads PERL ANTE REPL. This draft describes repository commit 6ca970b from November 18, 2026. It is a proposed talk, not an announcement of an accepted conference session.}
 \end{frame}
 }
 
@@ -136,13 +136,14 @@ See SV types, flags, reference counts, and referenced values.
 EVAL sub triple {
     return 3 * shift;
 }
-say triple(14)
+say triple 14
 (*@\result{42}@*)
 FUNCTIONS
 (*@\result{triple}@*)
 \end{lstlisting}
 \takeaway{The function is live immediately. Its source is not in LIST or SAVE.}
-\note{About two minutes. Press ordinary Enter after the closing brace. There is no extra terminator command to leave EVAL. EVAL sub defines a normal named sub in the current workspace package, not a lexical sub or Perl local. FUNCTIONS lists live names, including imports and aliases. It does not inspect unexecuted source. A plain sub declaration also works outside AUTO; uppercase EVAL makes the immediate intent explicit.}
+\captionline{Calls may omit parentheses where Perl permits. Prototypes retain Perl's parsing rules.}
+\note{About two minutes. Press ordinary Enter after the closing brace. There is no extra terminator command to leave EVAL. EVAL sub defines a normal named sub in the current workspace package, not a lexical sub or Perl local. FUNCTIONS lists live names, including imports and aliases. It does not inspect unexecuted source. A plain sub declaration also works outside AUTO; uppercase EVAL makes the immediate intent explicit. A function must be defined or imported before a bare call is compiled. Scalar, list, block, and reference prototypes work normally; parentheses remain necessary in prototype declarations and code-reference calls.}
 \end{frame}
 
 \begin{frame}[fragile]{An earlier result changes in place}
@@ -150,7 +151,7 @@ FUNCTIONS
 \begin{column}{.48\textwidth}
 \kicker{Before editing}
 \begin{lstlisting}
-say triple(14)
+say triple 14
 (*@\result{42}@*)
 say "keep this line below"
 (*@\result{keep this line below}@*)
@@ -159,7 +160,7 @@ say "keep this line below"
 \begin{column}{.48\textwidth}
 \kicker{After 14 becomes 13}
 \begin{lstlisting}
-say triple(13)
+say triple 13
 (*@\result{39}@*)
 say "keep this line below"
 (*@\result{keep this line below}@*)
@@ -169,7 +170,7 @@ say "keep this line below"
 \par\vspace{2mm}
 Insert editing is the default. Enter replaces that entry's previous output.\par\medskip
 Later entries stay intact while they fit. \key{Esc} goes to fresh input.
-\note{Two-minute live demonstration and an important UX checkpoint. Type say triple(14), then the keep-this-line statement. Move up, replace 14 with 13, and submit. There should be no extra blank spacer before the later command. Output replacement is display behavior only: rerunning still repeats Perl side effects. Left at the beginning of a row now moves to the previous row's end, stopping at the visible top row. This behavior was added following human testing.}
+\note{Two-minute live demonstration and an important UX checkpoint. Type say triple 14, then the keep-this-line statement. Move up, replace 14 with 13, and submit. There should be no extra blank spacer before the later command. Output replacement is display behavior only: rerunning still repeats Perl side effects. Left at the beginning of a row now moves to the previous row's end, stopping at the visible top row. This behavior was added following human testing.}
 \end{frame}
 
 \begin{frame}[fragile]{Several blocks, one immediate evaluation}
@@ -177,7 +178,7 @@ Later entries stay intact while they fit. \key{Esc} goes to fresh input.
 EVAL do {
     my @values = (3, 7, 14);
     for my $value (@values) {
-        say triple($value);
+        say triple $value;
     }
 };
 \end{lstlisting}
@@ -192,11 +193,11 @@ EVAL do {
 \begin{columns}[T,onlytextwidth]
 \begin{column}{.54\textwidth}
 \begin{lstlisting}
-10 say triple(14)
+10 say triple 14
 5 say "Results"
 LIST
 (*@\result{5\space\space say "Results";}@*)
-(*@\result{10 say triple(14);}@*)
+(*@\result{10 say triple 14;}@*)
 RUN
 (*@\result{Results}@*)
 (*@\result{42}@*)
@@ -216,12 +217,12 @@ Typing a number alone deletes that line.
 \begin{column}{.51\textwidth}
 \begin{lstlisting}
 AUTO
-say triple(3)
-say triple(7)
+say triple 3
+say triple 7
 AUTO OFF
 LIST 15-
-(*@\result{15 say triple(3);}@*)
-(*@\result{20 say triple(7);}@*)
+(*@\result{15 say triple 3;}@*)
+(*@\result{20 say triple 7;}@*)
 \end{lstlisting}
 \end{column}
 \begin{column}{.44\textwidth}
@@ -278,7 +279,7 @@ use warnings;
 sub triple { return 3 * shift; }
 my @values = (3, 7, 14);
 for my $value (@values) {
-    say triple($value);
+    say triple $value;
 }
 \end{lstlisting}
 \captionline{Included as demo/portable.pl. After EDIT, RUN prints 9, 21, 42. A redefinition warning is expected because triple is already live.}
@@ -330,7 +331,7 @@ Plain Perl gets numbers 10, 20, 30, \ldots\par\medskip
 \begin{lstlisting}
 EVAL sub triple { return 4 * shift; }
 (*@\result{Subroutine triple redefined ...}@*)
-say triple(14)
+say triple 14
 (*@\result{56}@*)
 FUNCTIONS
 (*@\result{triple}@*)
@@ -348,7 +349,7 @@ EVAL do {
     sub twice { return 2 * shift; }
     say "Setup $setups";
 }
-EVAL say twice(21)
+EVAL say twice 21
 \end{lstlisting}
 \captionline{First entry prints Setup 1. The next entry prints 42 without running setup again.}
 \takeaway{The sub remains callable after the surrounding code finishes.}
@@ -385,11 +386,12 @@ ENV EXAMPLE_COLOR
 \begin{column}{.5\textwidth}
 \cmd{!} captures a shell command's output.\par\medskip
 \cmd{!!} lends the real terminal to an interactive command.\par\medskip
-\cmd{chdir '/path'} changes AnteREPL's directory. \cmd{! cd} changes only its child shell.
+\cmd{CD '/path'} changes AnteREPL's directory; \cmd{CHDIR} is an alias.\par\medskip
+Perl \cmd{chdir} also works. \cmd{! cd} changes only its child shell.
 \end{column}
 \end{columns}
 \captionline{Unix uses /bin/sh. Native Windows uses COMSPEC or cmd.exe, with that shell's syntax.}
-\note{About one minute. Bare pwd and cat are not automatic shell passthrough. This avoids keyword ambiguity. In screen mode single-bang commands have closed stdin and display their captured output when finished. Double bang supports interactive programs; press Enter after the program exits to return to AnteREPL. Future child commands inherit live ENV changes. AnteREPL cannot modify the parent shell or recover new unexported variables from it.}
+\note{About one minute. Bare pwd and cat are not automatic shell passthrough. CD and CHDIR accept one literal path, with quoting for spaces; no argument uses HOME, or USERPROFILE on native Windows if HOME is unset. Shell variables and tilde are not expanded: use lowercase Perl chdir with an expression when needed. In screen mode single-bang commands have closed stdin and display their captured output when finished. Double bang supports interactive programs; press Enter after the program exits to return to AnteREPL. Future child commands inherit live ENV changes. AnteREPL cannot modify the parent shell or recover new unexported variables from it.}
 \end{frame}
 
 \begin{frame}{Clearing the right state}
@@ -414,7 +416,7 @@ All four keep live \cmd{\%ENV}. \cmd{ENV RESET} restores the startup environment
 \toprule
 \textbf{Situation} & \textbf{Action}\\
 \midrule
-Unfinished input or running Perl & \key{Ctrl-C} cancels or interrupts\\
+Unfinished input or running Perl & \key{Ctrl-C} cancels or interrupts, then explains how to exit\\
 Wrong source edit & \cmd{UNDO} restores a prior source version\\
 Leaving with unsaved source & \cmd{SAVE}, or deliberately use \cmd{QUIT!}\\
 Unclear current state & \cmd{STATUS}, \cmd{LIST}, \cmd{FUNCTIONS}\\

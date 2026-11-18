@@ -48,7 +48,7 @@ eval 'say "string eval"';
 Uppercase \cmd{EVAL} is an AnteREPL command.\par\medskip
 Lowercase \cmd{eval} retains Perl's exception-catching and string-eval behavior.\par\medskip
 Read \cmd{\$@} in the same entry; a later REPL evaluation can change it.
-\note{Reference only. All prompt commands and subcommands must be uppercase. Lowercase or mixed-case input follows ordinary Perl and AUTO rules. An uppercase EVAL prefix removes ambiguity when a line begins with an editing number or resembles a command. EVAL does not automatically print an expression's value; use ? for that. These examples are alternatives, not instructions to paste as a single entry while AUTO is active.}
+\note{Reference only. All prompt commands and subcommands must be uppercase. Lowercase or mixed-case input follows ordinary Perl and AUTO rules. If immediate input such as cls fails with a bareword error matching a command, the error becomes an uppercase spelling hint; it does not execute CLS. Valid keywords and defined user functions retain Perl semantics and diagnostics. An uppercase EVAL prefix removes ambiguity when a line begins with an editing number or resembles a command. EVAL does not automatically print an expression's value; use ? for that. These examples are alternatives, not instructions to paste as a single entry while AUTO is active.}
 \end{frame}
 
 \begin{frame}{Reference: LIST and display controls}
@@ -141,7 +141,8 @@ Home / End; PageUp / PageDown & Row ends; move within visible rows\\
 Esc / Ctrl-End; Ctrl-Home & Fresh bottom row; visible top row\\
 Ctrl-U / Ctrl-L & Clear row / redraw screen\\
 Tab & Spaces to next four-column tab stop\\
-Ctrl-C / Ctrl-D & Cancel or interrupt / end AUTO, otherwise guarded exit\\
+Ctrl-C & Cancel or interrupt; show QUIT, QUIT!, and Ctrl-D exit guidance\\
+Ctrl-D & End AUTO/cancel input; otherwise exit if source is saved\\
 \bottomrule
 \end{tabularx}
 \note{Reference only. Default editing mode is insert. Left stops at the visible top row and visits empty rows one by one. Wrapped pieces are linked without adding source newlines. Shift+Enter is recognized as CSI-u ESC [ 13 ; 2 u or xterm ESC [ 27 ; 2 ; 13 tilde, without the spaces. No app can distinguish Shift+Enter when the terminal sends ordinary Enter for both. Ctrl-N is the fallback. Input to a running program has its own editing boundary.}
@@ -155,7 +156,7 @@ EVAL sub triple { return 4 * shift; }
 (*@\result{Subroutine triple redefined ...}@*)
 say $old->(14)
 (*@\result{42}@*)
-say triple(14)
+say triple 14
 (*@\result{56}@*)
 \end{lstlisting}
 \captionline{Assumes a fresh workspace. FUNCTIONS includes live imported names and aliases, but not anonymous subs held only in variables or bodyless stubs.}
@@ -195,15 +196,15 @@ For stored inspection code, call \cmd{Data::Dumper::Dumper} or \cmd{Devel::Peek:
 
 \begin{frame}{Sources and version of this talk}
 \small
-Implementation snapshot: \cmd{f0dbd0ed1238} \textemdash{} November 18, 2026.\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
+Implementation snapshot: \cmd{6ca970bb0332} \textemdash{} November 18, 2026.\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6ca970bb033241321097593ed832f62f2926c2e1/lib/App/AnteREPL.pm}{\textbf{Implementation, complete HELP, and POD}}\par\medskip
 \href{https://github.com/oodler577/p5-App-AnteREPL/wiki}{\textbf{User guide and workflow documentation}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/tree/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/t}{\textbf{Unit and screen tests}}\hspace{5mm}
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
-\href{https://github.com/oodler577/p5-App-AnteREPL/blob/f0dbd0ed12385ec79277ab6fdaae8aa5f6dd8530/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
+\href{https://github.com/oodler577/p5-App-AnteREPL/tree/6ca970bb033241321097593ed832f62f2926c2e1/t}{\textbf{Unit and screen tests}}\hspace{5mm}
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6ca970bb033241321097593ed832f62f2926c2e1/tools/terminal-smoke.pl}{\textbf{Perl terminal harness}}\par\medskip
+\href{https://github.com/oodler577/p5-App-AnteREPL/blob/6ca970bb033241321097593ed832f62f2926c2e1/CONTRIBUTING.md}{\textbf{Distribution and release notes}}
 \captionline{Historical model: \href{https://www.homecomputermuseum.nl/wp-content/uploads/2020/04/Commodore-64_Users-Guide-1982.pdf}{Commodore 64 User's Guide} and \href{https://www.lost-manuals.com/pdf/commodore--c64--user--ID9153.pdf}{Programmer's Reference Guide}.}
 \par\vspace{4mm}
 This deck documents an implementation under active UX testing.\par
 The included README explains rehearsal, shorter routes, and Overleaf editing.
-\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot dbe96c7 documents the same screen bounds and explicit resize recovery. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
+\note{Sources are the project's implementation and its user-facing documentation, not reconstructed from historical chat alone. Wiki snapshot 5a28cb0 documents the same screen bounds and explicit resize recovery. Examples use generic data and the application's existing triple demonstration. Update the implementation hash and any changed behavior together when revising the talk. No external artwork, logos, or C64 screen photographs are needed for this text-based deck.}
 \end{frame}

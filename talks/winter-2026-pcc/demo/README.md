@@ -3,6 +3,10 @@
 The main tutorial starts in a **fresh AnteREPL session with AUTO off**.
 REPL commands and subcommands must be uppercase, including DUMP and PEEK.
 Lowercase and mixed-case input follows ordinary Perl and AUTO rules.
+An immediate command-like bareword such as `cls` gets an uppercase spelling
+hint. It does not run CLS. Valid Perl keywords and defined functions still work.
+Ctrl-C cancels or interrupts and explains how to leave with QUIT, QUIT!, or
+Ctrl-D. Ctrl-D ends AUTO first and otherwise protects unsaved source on exit.
 Use a disposable working directory. Commands here run inside AnteREPL unless
 explicitly marked “system shell.” Transcript results appear separately from
 input so the command blocks can be copied without copying output.
@@ -60,7 +64,7 @@ that may contain secrets.
 EVAL sub triple {
     return 3 * shift;
 }
-say triple(14)
+say triple 14
 FUNCTIONS
 ```
 
@@ -70,7 +74,7 @@ FUNCTIONS includes `triple`.
 For the screen demo, enter these as two separate entries:
 
 ```perl
-say triple(14)
+say triple 14
 say "keep this line below"
 ```
 
@@ -85,7 +89,7 @@ Then submit this whole multiline entry:
 EVAL do {
     my @values = (3, 7, 14);
     for my $value (@values) {
-        say triple($value);
+        say triple $value;
     }
 };
 ```
@@ -98,18 +102,18 @@ it; Ctrl-N is the fallback. No source is added to LIST.
 ## 3. Numbered source and AUTO (slides 14–16)
 
 ```text
-10 say triple(14)
+10 say triple 14
 5 say "Results"
 LIST
 RUN
 AUTO
-say triple(3)
-say triple(7)
+say triple 3
+say triple 7
 AUTO OFF
 LIST 15-
 ```
 
-LIST initially shows `5  say "Results";` and `10 say triple(14);` with aligned
+LIST initially shows `5  say "Results";` and `10 say triple 14;` with aligned
 code. RUN prints `Results` and `42`. AUTO adds lines 15 and 20 without a
 second numbered echo. Try Ctrl-D as an alternative to AUTO OFF: the app stays
 open and stored lines remain.
@@ -135,7 +139,7 @@ use warnings;
 sub triple { return 3 * shift; }
 my @values = (3, 7, 14);
 for my $value (@values) {
-    say triple($value);
+    say triple $value;
 }
 ```
 
@@ -167,7 +171,7 @@ terminal I/O. Press Enter after it exits to return.
 
 ```perl
 EVAL sub triple { return 4 * shift; }
-say triple(14)
+say triple 14
 FUNCTIONS
 ```
 
@@ -180,7 +184,7 @@ EVAL do {
     sub twice { return 2 * shift; }
     say "Setup $setups";
 }
-EVAL say twice(21)
+EVAL say twice 21
 ```
 
 Expect `Setup 1`, then `42`. Reexecuting the first group increments `$setups`
@@ -212,8 +216,11 @@ On Unix:
 ```
 
 The echo prints `blue`. On native Windows, use commands and variable expansion
-for cmd.exe, for example `! echo %EXAMPLE_COLOR%`. Use Perl `chdir` for persistent
-working-directory changes; a child-shell `! cd` does not change AnteREPL.
+for cmd.exe, for example `! echo %EXAMPLE_COLOR%`. Use `CD directory`,
+`CHDIR directory`, or Perl `chdir $ENV{HOME}` for persistent working-directory
+changes; a child-shell `! cd` does not change AnteREPL. CD and CHDIR paths are
+literal; quote spaces. With no path they use HOME (USERPROFILE on native Windows
+if HOME is unset).
 
 ## 7. State checkpoint (slides 25–27)
 
@@ -262,7 +269,7 @@ EVAL sub triple { return 3 * shift; }
 $old = \&triple
 EVAL sub triple { return 4 * shift; }
 say $old->(14)
-say triple(14)
+say triple 14
 ```
 
 Expect a warning on redefinition, then `42` and `56`. The reference retains
