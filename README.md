@@ -44,7 +44,8 @@ without submitting, including inside an editable multiline EVAL block.
 current workspace. Immediate code and `RUN` can call it; it does not enter
 the numbered program or appear in `SAVE`. `FUNCTIONS` lists defined functions
 in the current workspace, including imports. Redefining a named subroutine
-replaces it with Perl's usual warning; no confirmation is required.
+through ordinary Perl replaces it with the usual warning, without confirmation.
+Marked shorthand redefinitions ask first, as described below.
 Call it as `say triple 14`. Bare calls use Perl's normal precedence and
 prototype rules; parentheses remain available when needed for grouping.
 
@@ -52,22 +53,27 @@ Command shortcuts need one shifted letter: `E` evaluates, `L` lists, `R` runs,
 `C` clears the screen, `H` shows HELP, and `Q` quits. Digits resolve collisions:
 `E1` edits, `L1` loads, `R1` renumbers. Every command and option has a shortcut;
 `H` lists the complete table. Existing long commands still work.
+Destructive shortcuts ask `Continue? [y/N]`; append `!` to skip the question,
+for example `D1! 10-30`, `R2!`, `S! demo.pl`, or `Q!`. New files and values do
+not prompt. Piped input requires `!` for a destructive shortcut.
 
 Immediate definitions include:
 
 ```text
-E s triple return 3 * shift
-E a colors red, blue
-E ar names Ada, Bob
-E h options color => blue
-E hr record name => Ada
+E = s triple return 3 * shift
+E = a colors red, blue
+E = ar names Ada, Bob
+E = h options color => blue
+E = hr record name => Ada
 ```
 
-With AUTO off, `a one, two, threee` defines persistent `@a` with
-those exact strings. Words are implicitly quoted only in this small list
-grammar; explicit Perl expressions go in parentheses. Keywords and existing
-functions retain priority over bare destination names. `EVAL` always means
-literal Perl. See [the complete grammar and review checklist](docs/SHORTCUTS-AND-SHORTHAND.md).
+With AUTO off, `= a one, two, threee` defines persistent `@a` with those exact
+strings. The equals sign followed by a space explicitly selects shorthand;
+unmarked expressions remain Perl without any mode switch. Normal quotes and
+q/qq/qw/regex operators work inside marked lists too. Other Perl expressions
+go in parentheses. Replacing existing destinations asks first; `E! = a colors
+green` and `= colors! green, blue` force replacement. Literal EVAL and arbitrary
+Perl retain their usual side effects. See [the complete grammar and review checklist](docs/SHORTCUTS-AND-SHORTHAND.md).
 
 ## A screen-sized work area
 

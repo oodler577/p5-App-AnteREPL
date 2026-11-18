@@ -54,28 +54,28 @@ $r->dispatch('L2 5-10');
 is_deeply $screen->{listed}, [['5  say "one";', '10 say "two";'],2,'slow'], 'L2 puts its range before SLOW';
 $r->dispatch('L3 10-');
 is_deeply $screen->{listed}, [['10 say "two";'],2,'pause'], 'L3 preserves open-ended ranges and PAUSE';
-$r->dispatch('C'); $r->dispatch('R3');
+$r->dispatch('C!'); $r->dispatch('R3!');
 is $screen->{cleared}, 1, 'C clears the screen';
 is $screen->{recovered}, 1, 'R3 requests screen recovery';
 $r->dispatch('H');
 is $screen->{listed}[2], 'pause', 'H retains paged HELP';
 is $screen->{listed}[3], 'HELP', 'H keeps the HELP listing label';
 delete $r->{screen};
-capture { $r->dispatch('R1 20 20') };
+capture { $r->dispatch('R1! 20 20') };
 is_deeply [$r->numbers], [20,40], 'R1 renumbers with supplied start and step';
-$r->dispatch('D1 20');
+$r->dispatch('D1! 20');
 is_deeply [$r->numbers], [40], 'D1 deletes source';
-capture { $r->dispatch('U') };
+capture { $r->dispatch('U!') };
 is_deeply [$r->numbers], [20,40], 'U restores the prior source edit';
 capture { $r->dispatch(qq{S "$dir/test file.pl"}) };
 ok !$r->dirty, 'S saves and marks source clean';
-$r->dispatch('N');
+$r->dispatch('N!');
 is_deeply [$r->numbers], [], 'N clears saved source';
 capture { $r->dispatch(qq{L1 "$dir/test file.pl"}) };
 is capture { $r->dispatch('R') }, "one\ntwo\n", 'L1 loads a quoted path';
 $r->dispatch('50 say "dirty"');
 for my $input ('N', 'Q', qq{L1 "$dir/test file.pl"}, qq{I "$dir/test file.pl"}) {
-    like fails { $r->dispatch($input) }, qr/Unsaved program/, "$input retains its unsaved-source guard";
+    like fails { $r->dispatch($input) }, qr/Confirmation required/, "$input retains its unsaved-source guard";
 }
 capture { $r->dispatch(qq{L1! "$dir/test file.pl"}) };
 ok !$r->dirty, 'L1! deliberately replaces unsaved source';
@@ -84,20 +84,20 @@ ok !defined $r->{filename} && $r->dirty, 'I! imports an unsaved copy without a s
 capture { $r->dispatch(qq{E2 "$dir/export.pl"}) };
 like App::AnteREPL::_read_text("$dir/export.pl"), qr/use strict;.*say "one"/s, 'E2 exports standalone Perl';
 $r->{edited_text} = "say \"editor\";\n";
-capture { $r->dispatch('E1') };
+capture { $r->dispatch('E1!') };
 is $r->{edited_name}, 'program.pl', 'E1 opens the program editor';
 is $r->source, "say \"editor\";\n", 'E1 replaces source with editor result';
 is capture { $r->dispatch('D [1,2]') }, "\$VAR1 = [\n          1,\n          2\n        ];\n", 'D inspects a Perl expression';
 my $peek = ShortcutPeek->new;
 $peek->dispatch('P $value, 10');
 is_deeply $peek->{peek}, ['PEEK','$value, 10'], 'P keeps the expression and traversal limit';
-capture { $r->dispatch('R2') };
+capture { $r->dispatch('R2!') };
 is_deeply [$r->function_names], [], 'R2 clears the live workspace';
 is $r->source, "say \"editor\";\n", 'R2 keeps source';
 is $r->dispatch('Q!'), 0, 'Q! deliberately exits with unsaved source';
 $r->dispatch('N!');
-is $r->dispatch('Q'), 0, 'Q exits a clean session';
-for my $bad ('R!', 'R1!', 'R2!', 'R3!', 'C!', 'C1!', 'E!', 'E1!', 'E2!', 'A0!', 'V1!') {
+like fails { $r->dispatch('Q') }, qr/Confirmation required/, 'Q confirms even when source is clean';
+for my $bad ('R!', 'C1!', 'E!', 'A0!', 'D!', 'P!', 'L!', 'F!', 'H!', 'S1!') {
     like fails { $r->dispatch($bad) }, qr/suffix/, "$bad does not acquire a force behavior";
 }
 
@@ -109,18 +109,18 @@ for my $bad ('R!', 'R1!', 'R2!', 'R3!', 'C!', 'C1!', 'E!', 'E1!', 'E2!', 'A0!', 
     is $ENV{Mixed}, 'hello world', 'V1 retains literal value quoting and case';
     like capture { $v->dispatch('V') }, qr/Mixed="hello world"/, 'V lists the environment';
     capture { $v->dispatch(qq{V4 "$dir/test.env"}) };
-    $v->dispatch('V2 Mixed');
+    $v->dispatch('V2! Mixed');
     ok !exists $ENV{Mixed}, 'V2 removes the variable';
     capture { $v->dispatch(qq{V5 "$dir/test.env"}) };
     is $ENV{Mixed}, 'hello world', 'V5 loads a snapshot';
-    $v->dispatch('V1 Mixed changed');
-    capture { $v->dispatch('V6') };
+    $v->dispatch('V1! Mixed changed');
+    capture { $v->dispatch('V6!') };
     is $ENV{Mixed}, 'hello world', 'V6 reloads the remembered snapshot';
     $v->{edited_text} = "ONLY=edited\n";
-    capture { $v->dispatch('V3') };
+    capture { $v->dispatch('V3!') };
     is $v->{edited_name}, 'environment.env', 'V3 opens the environment editor';
     is_deeply \%ENV, {ONLY=>'edited'}, 'V3 replaces the environment from editor text';
-    capture { $v->dispatch('V0') };
+    capture { $v->dispatch('V0!') };
     is_deeply \%ENV, {START=>'original',S=>'variable named S'}, 'V0 restores the startup environment';
 }
 

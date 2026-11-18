@@ -53,3 +53,7 @@
      - add explicit single-letter/digit shortcuts for all command operations
      - add immediate function/container shorthand and a bounded implicit-word
        list grammar; retain literal EVAL and normal Perl in stored source
+     - confirm destructive shortcuts by default; ! explicitly bypasses the
+       question, including shorthand redefinitions and file overwrites
+     - require an equals-and-space shorthand marker to avoid collisions with
+       valid Perl; support native quote operators consistently in list values

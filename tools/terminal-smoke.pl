@@ -118,6 +118,13 @@ sub now { clock_gettime(CLOCK_MONOTONIC) }
 sub has_line { my ($line) = @_; return scalar grep { $_ eq $line } $view->lines; }
 sub has_prefix { my ($prefix) = @_; return scalar grep { index($_, $prefix) == 0 } $view->lines; }
 sub screen_text { join "\n", $view->lines }
+sub at_confirmation {
+    my @lines = $view->lines;
+    my $row = $view->{row};
+    return 0 if $row < 0 || $row > $#lines;
+    my $text = join ' ', @lines[($row ? $row - 1 : 0) .. $row];
+    return $text =~ /Continue\? \[\s*y\/N\]\z/;
+}
 sub check { my ($ok, $message) = @_; die "$message (cursor $view->{row},$view->{col})\n" . screen_text() . "\n" unless $ok; }
 
 sub read_available {
@@ -480,32 +487,72 @@ $selector = IO::Select->new($pty);
 $view = TerminalView->new(16, 80);
 ($transcript, $eof, $reaped) = ('', 0, 0);
 wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'shorthand session startup');
-send_text('E s triple return 3 * shift' . "\r");
+send_text('E = s triple return 3 * shift' . "\r");
 command('say triple 14', '42');
 wait_for(sub { $view->{row} == 5 && $view->{col} == 0 }, 'shorthand call ready for input');
 send_text("\e[A\e[A\e[F\x7f3\r");
 wait_for(sub { has_line('say triple 13') && has_line('39') && !has_line('42') }, 'shorthand function call reruns in place');
 send_text("\e[1;5F");
-send_text('a one, two, threee' . "\r");
+send_text('= a one, two, threee' . "\r");
 command('D \@a', "          'threee'");
-send_text('E hr record name => Ada, tags => [' . "\r");
-wait_for(sub { has_line('E hr record name => Ada, tags => [') }, 'shorthand container continues');
+send_text('E = hr record name => Ada, tags => [' . "\r");
+wait_for(sub { has_line('E = hr record name => Ada, tags => [') }, 'shorthand container continues');
 send_text('one, two]' . "\r");
 command('E say join q{:}, @{$record->{tags}}', 'one:two');
-send_text('E a colors red-blue' . "\r");
+send_text('E = a colors red-blue' . "\r");
 wait_for(sub { has_prefix('Ambiguous shorthand:') }, 'ambiguous shorthand explains the problem');
 command('E say "still usable"', 'still usable');
 command('A', 'AUTO 5, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
-send_text('E ar live one, two' . "\r");
+send_text('E = ar live one, two' . "\r");
 command('S1', '0 lines; unchanged; no save filename.');
 command('A0', 'AUTO off.');
 send_text("H\r");
 wait_for(sub { has_prefix('HELP paused') }, 'shortcut HELP pauses');
 send_text('q');
 wait_for(sub { !has_prefix('HELP paused') }, 'shortcut HELP returns');
-send_text("Q\r");
+send_text("Q!\r");
 finish_repl();
 print "PASS: shortcuts and shorthand support implicit words, multiline containers, rerunning, AUTO, errors, and exit\n";
+
+for my $plain (0, 1) {
+    ($pty, $pid) = start_repl($plain ? '--plain' : ());
+    $selector = IO::Select->new($pty);
+    $view = TerminalView->new(16, 80);
+    ($transcript, $eof, $reaped) = ('', 0, 0);
+    wait_for(sub { index($transcript, 'Type HELP for commands.') >= 0 }, 'confirmation startup');
+    my $exchange = sub {
+        my ($input, $expected, $label) = @_;
+        my $offset = length $transcript;
+        send_text($input);
+        wait_for(sub { ref($expected) eq 'CODE' ? $expected->() : substr($transcript, $offset) =~ $expected }, $label);
+    };
+    my $question = $plain ? qr/\[y\/N\]/ : sub { at_confirmation() };
+    send_text('10 say "kept"' . "\r");
+    pump_for(0.1);
+    for my $cancel ("\r", "n\r", "\x04", ($plain ? () : "\e"), "\x03") {
+        $exchange->("D1 10\r", $question, 'deletion asks');
+        $exchange->($cancel, $cancel eq "\x03" ? qr/To leave:/ : qr/Cancelled\./, 'deletion cancelled');
+        $exchange->("L\r", qr/10 say "kept";/, 'source survives cancellation');
+    }
+    $exchange->("D1 10\r", $question, 'deletion asks again');
+    send_text("y\r");
+    pump_for(0.1);
+    $exchange->("S1\r", qr/0 lines;/, 'yes deletes');
+    $exchange->("U!\r", qr/Program edit undone\./, 'forced undo');
+    $exchange->("L\r", qr/10 say "kept";/, 'undo restored source');
+    send_text('E = a values old' . "\r");
+    pump_for(0.1);
+    $exchange->('E = a values (die "must not run")' . "\r", $question, 'definition asks before execution');
+    $exchange->("\r", qr/Cancelled\./, 'definition cancelled');
+    $exchange->('E say join q{:}, @values' . "\r", qr/(?:\r?\n|H|K)old(?:\r?\n|\e)/, 'old value survives');
+    $exchange->("Q\r", $question, 'quit asks even with live state');
+    $exchange->("n\r", qr/Cancelled\./, 'quit declined');
+    send_text("Q!\r");
+    # Successful exit without an answer proves Q! did not ask. Screen redraws
+    # may include an older question, so searching the raw transcript is wrong.
+    finish_repl();
+    print 'PASS: ', ($plain ? 'plain' : 'screen'), " confirmations accept yes; Enter/No/Ctrl-D/Ctrl-C cancel; force skips prompts\n";
+}
 
 for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!') {
     ($pty, $pid) = start_repl();
@@ -519,6 +566,10 @@ for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!') {
         wait_for(sub { has_prefix('Unsaved program.') }, 'QUIT keeps unsaved source');
     }
     send_text("$command\r");
+    if ($command eq 'Q') {
+        wait_for(sub { at_confirmation() }, 'Q confirmation');
+        send_text("yes\r");
+    }
     finish_repl();
     check($transcript =~ /\e\[\?1049l\r?\n\z/,
         "$command did not print a newline after restoring the original display");

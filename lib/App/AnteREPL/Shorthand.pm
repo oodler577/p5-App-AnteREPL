@@ -26,6 +26,20 @@ sub _trim {
     return $text;
 }
 
+sub _starts_quote {
+    my ($text) = @_;
+    return $text =~ /\A['"`]/
+        || $text =~ /\A(?:qq|qw|qx|qr|q|m|s|tr|y)(?=\s|[^\w\s])\s*(?!=>)\S/;
+}
+
+sub _quote {
+    my ($text) = @_;
+    local $@;
+    my ($quote) = extract_quotelike("$text", '');
+    _fail('unclosed quoted value') unless defined $quote && length $quote;
+    return $quote;
+}
+
 sub _group {
     my ($text) = @_;
     my $open = substr($text, 0, 1);
@@ -42,12 +56,10 @@ sub _group {
         my $char = substr($rest, 0, 1);
         return substr($text, 0, $position + 1) if $char eq $close;
         _fail('mismatched container delimiters') if $char =~ /[)\]}]/;
-        if ($char eq "'" || $char eq '"') {
-            my ($quote) = extract_quotelike("$rest", '');
-            _fail('unclosed quoted value') unless defined $quote && length $quote;
-            $position += length $quote;
-        }
+        if ($rest =~ /\A\$[A-Za-z_][A-Za-z0-9_]*/) { $position += length $&; }
+        elsif (_starts_quote($rest)) { $position += length _quote($rest); }
         elsif ($char =~ /[([{]/) { $position += length _group($rest); }
+        elsif ($rest =~ /\A[\p{L}_][\p{L}\p{N}_]*/) { $position += length $&; }
         else { ++$position; }
     }
     _fail('unclosed container');
@@ -62,11 +74,8 @@ sub _split {
     while ($position < length $text) {
         my $rest = substr($text, $position);
         my $char = substr($rest, 0, 1);
-        if ($char eq "'" || $char eq '"') {
-            my ($quote) = extract_quotelike("$rest", '');
-            _fail('unclosed quoted value') unless defined $quote && length $quote;
-            $position += length $quote;
-        }
+        if ($rest =~ /\A\$[A-Za-z_][A-Za-z0-9_]*/) { $position += length $&; }
+        elsif (_starts_quote($rest)) { $position += length _quote($rest); }
         elsif ($char =~ /[([{]/) {
             $position += length _group($rest);
         }
@@ -76,6 +85,7 @@ sub _split {
             $position += length $separator;
             $start = $position;
         }
+        elsif ($rest =~ /\A[\p{L}_][\p{L}\p{N}_]*/) { $position += length $&; }
         else { ++$position; }
     }
     push @parts, substr($text, $start);
@@ -90,9 +100,9 @@ sub _value {
     return "'$text'" if $text =~ /\A[\p{L}_][\p{L}\p{N}_]*\z/;
     return $text if $text =~ /\A[+-]?(?:(?:0|[1-9][0-9]*)(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\z/;
     return $text if $text =~ /\A\$[A-Za-z_][A-Za-z0-9_]*\z/;
-    if ($text =~ /\A['"]/) {
-        my ($quote, $rest) = extract_quotelike("$text", '');
-        return $quote if defined $quote && length $quote && _trim($rest) eq '';
+    if (_starts_quote($text)) {
+        my $quote = _quote($text);
+        return $quote if _trim(substr($text, length $quote)) eq '';
         _fail('a quoted value must occupy the whole item');
     }
     if ($text =~ /\A[([{]/) {
@@ -140,7 +150,7 @@ sub _hash {
 sub _definition {
     my ($type, $name, $body) = @_;
     if ($type eq 's') {
-        _fail('a function body is missing; try E s name return expression') unless $body =~ /\S/;
+        _fail('a function body is missing; try E = s name return expression') unless $body =~ /\S/;
         _fail("'$name' is a Perl keyword; choose another function name") if perl_keyword($name);
         return "sub $name {\n$body\n}";
     }
@@ -153,41 +163,47 @@ sub _definition {
 
 sub explicit {
     my ($class, $line) = @_;
-    return unless $line =~ /\A\s*E\s+(s|a|ar|h|hr)(?=\s|\z)(.*)\z/s;
+    return unless $line =~ /\A\s*E(!?)\s+=\s+(.*)\z/s;
+    my ($force, $definition) = ($1, $2);
+    _fail('expected a definition tag: s, a, ar, h, or hr')
+        unless $definition =~ /\A(s|a|ar|h|hr)(?=\s|\z)(.*)\z/s;
     my ($type, $tail) = ($1, $2);
     $tail =~ s/;\s*\z// if $type ne 's';
     _fail("$type needs a plain destination name, without a sigil")
         unless $tail =~ /\A\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z/s;
-    return _definition($type, $1, defined $2 ? $2 : '');
+    my ($name, $body) = ($1, defined $2 ? $2 : '');
+    return { code=>_definition($type, $name, $body), type=>$type, name=>$name, force=>$force, label=>'E' };
 }
 
 sub _implicit_candidate {
-    my ($line, $is_function) = @_;
-    return unless $line =~ /\A\s*([a-z_][A-Za-z0-9_]*)\s+(.+)\z/s;
-    my ($name, $body) = ($1, $2);
-    return if perl_keyword($name) || ($is_function && $is_function->($name));
-    return unless $body =~ /,|=>/;
-    return ($name, $body);
+    my ($line) = @_;
+    return unless $line =~ /\A\s*=\s+/;
+    _fail('a named list needs a lowercase-leading destination and values')
+        unless $line =~ /\A\s*=\s+([a-z_][A-Za-z0-9_]*)(!?)\s+(.+)\z/s;
+    my ($name, $force, $body) = ($1, $2, $3);
+    return ($name, $body, $force);
 }
 
 sub implicit {
-    my ($class, $line, $is_function) = @_;
-    my ($name, $body) = _implicit_candidate($line, $is_function);
+    my ($class, $line) = @_;
+    my ($name, $body, $force) = _implicit_candidate($line);
     return unless defined $name;
     $body =~ s/;\s*\z//; # One optional statement terminator, outside the values.
     my @commas = _split($body, ',');
     my @arrows = _split($body, '=>');
-    return unless @commas > 1 || @arrows > 1;
-    return _definition(@arrows > 1 ? 'h' : 'a', $name, $body);
+    _fail('a named list needs a top-level comma or key => value; try E = a name value')
+        unless @commas > 1 || @arrows > 1;
+    my $type = @arrows > 1 ? 'h' : 'a';
+    return { code=>_definition($type, $name, $body), type=>$type, name=>$name, force=>$force, label=>'= ' . $name };
 }
 
 sub needs_more {
-    my ($class, $line, $is_function) = @_;
+    my ($class, $line) = @_;
     my $body;
-    if ($line =~ /\A\s*E\s+(?:a|ar|h|hr)\s+[A-Za-z_][A-Za-z0-9_]*\s+(.*)\z/s) {
+    if ($line =~ /\A\s*E!?\s+=\s+(?:a|ar|h|hr)\s+[A-Za-z_][A-Za-z0-9_]*\s+(.*)\z/s) {
         $body = $1;
     }
-    else { (undef, $body) = _implicit_candidate($line, $is_function); }
+    else { (undef, $body) = _implicit_candidate($line); }
     return unless defined $body;
     local $@;
     my $ok = eval { _split($body, ','); 1 };

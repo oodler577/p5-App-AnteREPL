@@ -30,6 +30,7 @@ my %short_commands = (
     V => 'ENV', V0 => 'ENV RESET', V1 => 'ENV SET', V2 => 'ENV UNSET',
     V3 => 'ENV EDIT', V4 => 'ENV SAVE', V5 => 'ENV LOAD', V6 => 'ENV RELOAD',
 );
+my %guarded_shortcuts = map { $_ => 1 } qw(C D1 E1 E2 I L1 N Q R1 R2 R3 S U V V0 V1 V2 V3 V4 V5 V6);
 
 sub _expand_short_command {
     my ($source) = @_;
@@ -54,6 +55,58 @@ sub new {
         format    => 'native',
         initial_env => { %ENV },
     }, $class;
+}
+
+sub _confirmation_answer {
+    my ($self, $description, $forced) = @_;
+    die "Confirmation required: $description. Try $forced to proceed without a prompt.\n"
+        unless $self->{interactive};
+    print "$description. Continue? [y/N] ";
+    local $SIG{INT} = sub { die "Interrupted.\n" };
+    my ($answer, $error);
+    { local $@;
+      eval { $answer = $self->{screen} ? $self->{screen}->read_data(1) : scalar <STDIN>; 1 }
+          or $error = $@;
+    }
+    STDIN->clearerr if !$self->{screen} && (!defined $answer || defined $error);
+    die $error if defined $error;
+    print "\n" unless defined $answer;
+    return $answer;
+}
+
+sub _confirm_destructive {
+    my ($self, $description) = @_;
+    my $guard = $self->{shortcut_guard} or return;
+    return if $guard->{force} || $guard->{approved};
+    my $answer = $self->_confirmation_answer($description, $guard->{label} . '!');
+    die "Cancelled.\n" unless defined $answer && $answer =~ /\A\s*y(?:es)?\s*\z/i;
+    $guard->{approved} = 1;
+}
+
+sub _confirm_environment {
+    my ($self, $values) = @_;
+    return unless grep { !exists $values->{$_} || $ENV{$_} ne $values->{$_} } keys %ENV;
+    $self->_confirm_destructive('Replace or remove current environment values');
+}
+
+sub _evaluate_definition {
+    my ($self, $definition) = @_;
+    my ($type, $name) = @{$definition}{qw(type name)};
+    my $package = $self->{workspace} . '::';
+    my $existing;
+    {
+        no strict 'refs';
+        if (exists ${$package}{$name}) {
+            $existing = $type eq 's' ? defined &{$package . $name}
+                : $type eq 'a' ? defined *{$package . $name}{ARRAY}
+                : $type eq 'h' ? defined *{$package . $name}{HASH}
+                : defined tied(${$package . $name}) || defined ${$package . $name};
+        }
+    }
+    local $self->{shortcut_guard} = {label=>$definition->{label}, force=>$definition->{force}};
+    my $target = $type eq 's' ? "function $name" : ($type eq 'a' ? '@' : $type eq 'h' ? '%' : '$') . $name;
+    $self->_confirm_destructive("Replace existing $target") if $existing;
+    return $self->evaluate($definition->{code}, 0);
 }
 
 sub numbers { return sort { $a <=> $b } keys %{ $_[0]->{lines} }; }
@@ -97,6 +150,8 @@ sub dirty { return $_[0]->listing ne $_[0]->{saved}; }
 
 sub clear_screen {
     my ($self) = @_;
+    $self->_confirm_destructive('Clear the visible screen and its resize recovery copy')
+        if $self->{screen} || (-t STDOUT && ($ENV{TERM} || '') ne 'dumb');
     if ($self->{screen}) { $self->{screen}->clear_display; }
     elsif (-t STDOUT && ($ENV{TERM} || '') ne 'dumb') { print "\e[2J\e[H"; }
 }
@@ -104,7 +159,7 @@ sub clear_screen {
 sub recover_screen {
     my ($self) = @_;
     die "RECOVER requires screen mode.\n" unless $self->{screen};
-    $self->{screen}->recover_display;
+    $self->{screen}->recover_display($self);
 }
 
 sub change_directory {
@@ -171,6 +226,8 @@ sub _replace {
     my $new = join '', map { $_ . ' ' . $lines->{$_} . "\n" }
         sort { $a <=> $b } keys %$lines;
     return 0 if $new eq $self->listing;
+    $self->_confirm_destructive('Replace or remove stored source lines')
+        if grep { !exists $lines->{$_} || $lines->{$_} ne $self->{lines}{$_} } keys %{ $self->{lines} };
     push @{ $self->{undo} }, { %{ $self->{lines} } };
     shift @{ $self->{undo} } if @{ $self->{undo} } > 50;
     $self->{lines} = { %$lines };
@@ -265,18 +322,22 @@ sub renumber {
 sub undo {
     my ($self) = @_;
     die "Nothing to undo.\n" unless @{ $self->{undo} };
+    $self->_confirm_destructive('Replace the current program with its previous source version');
     $self->{lines} = pop @{ $self->{undo} };
     return 1;
 }
 
 sub _guard {
     my ($self, $command, $force) = @_;
+    return if $self->{shortcut_guard}; # Shortcuts confirm immediately before mutation.
     die "Unsaved program. Use SAVE, or $command! to discard it.\n" if $self->dirty && !$force;
 }
 
 sub clear {
     my ($self, $force) = @_;
     $self->_guard('NEW', $force);
+    $self->_confirm_destructive('Clear the stored program and its save filename')
+        if keys %{ $self->{lines} } || defined $self->{filename};
     $self->_replace({});
     $self->{filename} = undef;
     $self->{saved} = '';
@@ -318,6 +379,7 @@ sub save {
     $path = $self->{filename} unless defined $path;
     die "SAVE needs a filename, for example SAVE demo.bperl.\n" unless defined $path && length $path;
     my $format = $path =~ /\.pl\z/i ? 'perl' : $path =~ /\.bperl\z/i ? 'native' : $self->{format};
+    $self->_confirm_destructive("Overwrite file '$path'") if -e $path || -l $path;
     _write_text($path, $format eq 'perl' ? $self->source : "# PERL ANTE REPL V$PROGRAM_VERSION\n" . $self->listing);
     $self->{filename} = File::Spec->rel2abs($path);
     $self->{format} = $format;
@@ -331,6 +393,8 @@ sub load {
     my $text = _read_text($path);
     if ($text !~ /\A# (?:PERL ANTE REPL|BASIC PERL)\b/ && $path !~ /\.bperl\z/i) {
         my $lines = _source_lines($text);
+        $self->_confirm_destructive('Replace the stored program and its save filename')
+            if keys %{ $self->{lines} } || defined $self->{filename};
         $self->_replace($lines);
         $self->{filename} = File::Spec->rel2abs($path);
         $self->{format} = 'perl';
@@ -350,6 +414,8 @@ sub load {
         die "Duplicate line $number in '$path'.\n" if exists $lines{$number};
         $lines{$number} = $code;
     }
+    $self->_confirm_destructive('Replace the stored program and its save filename')
+        if keys %{ $self->{lines} } || defined $self->{filename};
     $self->_replace(\%lines);
     $self->{filename} = File::Spec->rel2abs($path);
     $self->{format} = 'native';
@@ -371,6 +437,8 @@ sub import_source {
     my ($self, $path, $force) = @_;
     $self->_guard('IMPORT', $force);
     my $lines = _source_lines(_read_text($path));
+    $self->_confirm_destructive('Replace the stored program and forget its save filename')
+        if keys %{ $self->{lines} } || defined $self->{filename};
     $self->_replace($lines);
     $self->{filename} = undef;
     $self->{saved} = '';
@@ -381,6 +449,7 @@ sub import_source {
 sub export_source {
     my ($self, $path) = @_;
     my $prelude = "#!/usr/bin/env perl\nuse 5.016;\nuse strict;\nuse warnings;\nno strict 'vars';\nno warnings 'once';\nuse feature 'say';\n";
+    $self->_confirm_destructive("Overwrite file '$path'") if -e $path || -l $path;
     _write_text($path, $prelude . $self->source);
     return $path;
 }
@@ -495,14 +564,19 @@ sub environment {
         _env_key($key);
         die "NUL is not allowed in environment values.\n" if $value =~ /\0/;
         $value = encode('UTF-8', $value) if utf8::is_utf8($value);
+        $self->_confirm_destructive("Replace environment variable '$key'")
+            if exists $ENV{$key} && $ENV{$key} ne $value;
         $ENV{$key} = $value;
     }
     elsif ($command eq 'UNSET') {
         die "Usage: ENV UNSET name\n" unless @args == 1;
-        delete $ENV{_env_key($args[0])};
+        my $key = _env_key($args[0]);
+        $self->_confirm_destructive("Remove environment variable '$key'") if exists $ENV{$key};
+        delete $ENV{$key};
     }
     elsif ($command eq 'SAVE') {
         die "Usage: ENV SAVE file\n" unless @args == 1;
+        $self->_confirm_destructive("Overwrite file '$args[0]'") if -e $args[0] || -l $args[0];
         _write_text($args[0], env_text());
         $self->{env_filename} = File::Spec->rel2abs($args[0]);
         print "Environment saved.\n";
@@ -513,6 +587,7 @@ sub environment {
         my $path = @args ? $args[0] : $self->{env_filename};
         die "No environment file yet. Use ENV LOAD file or ENV SAVE file first.\n" unless defined $path;
         my $values = _parse_env(_read_text($path));
+        $self->_confirm_environment($values);
         %ENV = %$values;
         $self->{env_filename} = File::Spec->rel2abs($path);
         print "Environment loaded.\n";
@@ -522,11 +597,13 @@ sub environment {
         my $before = env_text();
         my $after = $self->_edit_text($before, 'environment.env');
         my $values = _parse_env($after);
+        $self->_confirm_environment($values);
         %ENV = %$values;
         print $before eq $after ? "Environment unchanged.\n" : "Environment updated.\n";
     }
     elsif ($command eq 'RESET') {
         die "Usage: ENV RESET\n" if @args;
+        $self->_confirm_environment($self->{initial_env});
         %ENV = %{ $self->{initial_env} };
         print "Startup environment restored.\n";
     }
@@ -590,18 +667,13 @@ sub auto_store {
 sub input_needs_more {
     my ($self, $source) = @_;
     return 0 if $self->{auto} && $source =~ /\A:/;
-    my $more = App::AnteREPL::Shorthand->needs_more($source, sub { $self->_has_function($_[0]) });
+    my $more = App::AnteREPL::Shorthand->needs_more($source);
     return $more if defined $more;
     return needs_more($source);
 }
 
-sub _has_function {
-    my ($self, $name) = @_;
-    no strict 'refs';
-    return defined &{ $self->{workspace} . '::' . $name };
-}
-
 sub reset_workspace {
+    $_[0]->_confirm_destructive('Discard live workspace variables and functions');
     $_[0]->{workspace} = 'App::AnteREPL::Workspace::S' . ++$next_workspace;
 }
 
@@ -720,7 +792,7 @@ sub help {
     return <<'HELP';
 PERL ANTE REPL V0.1 / App::AnteREPL
 All REPL commands and subcommands must be uppercase, including DUMP and PEEK.
-Lowercase keywords/functions remain Perl. Immediate list shorthand is below.
+Unmarked expressions remain Perl. Marked list shorthand is described below.
 A bareword error matching a command gives an uppercase spelling hint instead.
 Valid Perl keywords and user functions keep their normal meaning.
 Quote filenames and values containing spaces.
@@ -742,20 +814,35 @@ SHORTCUTS (one uppercase letter, optionally followed by a digit)
   V2   ENV UNSET        V3   ENV EDIT / EDIT ENV
   V4   ENV SAVE         V5   ENV LOAD          V6   ENV RELOAD
 
-  Arguments and safeguards are unchanged. Examples: E say "hi", L 5-20,
+  Arguments keep their meaning. Examples: E say "hi", L 5-20,
   L2 5-20 (LIST 5-20 SLOW), C1 .., V1 NAME "value", S demo.pl, Q!.
-  Only L1!, I!, N!, and Q! accept the force suffix. Space separates arguments:
-  L1 loads a file; L 1 lists line 1. Shortcuts are not expanded inside Perl
+  Space separates arguments: L1 loads a file; L 1 lists line 1.
+  Shortcuts are not expanded inside Perl
   code or stored source. Full names still work. E also accepts definition tags.
 
-IMMEDIATE DEFINITIONS AND LIST SHORTHAND
-  E s name body         Define a named function, e.g. E s triple return 3 * shift.
-  E a name values       Assign @name. E ar name values assigns an arrayref $name.
-  E h name pairs        Assign %name. E hr name pairs assigns a hashref $name.
-  a one, two, threee    Define @a containing the strings one, two, threee.
-  colors red, blue      Define @colors. settings color => blue defines %settings.
+CONFIRMATION FOR DESTRUCTIVE SHORTCUTS
+  A shortcut that discards/replaces state asks Continue? [y/N]. Only y or yes
+  approves. Enter, No, Ctrl-D, or Esc (screen mode) cancels; Ctrl-C interrupts.
+  Add ! to skip confirmation: D1! 10-30, R2!, S! demo.pl, Q!.
+  Supported force forms: C! D1! E1! E2! I! L1! N! Q! R1! R2! R3! S! U!
+  V! V0! V1! V2! V3! V4! V5! V6!; E! for marked definitions only.
+  New files and new values do not ask; replacements do. Q always asks.
+  Editors prepare changes first, then ask before replacing current state.
+  Piped input cannot confirm: add ! explicitly; no following line is consumed.
+  Full command names retain their existing behavior. Arbitrary Perl in E/EVAL,
+  RUN, and shell commands has normal side effects; these are not classified.
 
-  Definition tags s/a/ar/h/hr are lowercase, only after uppercase E.
+IMMEDIATE DEFINITIONS AND LIST SHORTHAND
+  E = s name body       Define a function: E = s triple return 3 * shift.
+  E = a name values     Assign @name. E = ar name values makes an arrayref $name.
+  E = h name pairs      Assign %name. E = hr name pairs makes a hashref $name.
+  = a one, two, threee  Define @a containing the strings one, two, threee.
+  = colors red, blue    Define @colors; = settings color => blue defines %settings.
+
+  Shorthand requires = followed by a space. No mode switch is needed for Perl.
+  E s /old/new/ and even E s triple return 3 * shift remain substitutions.
+  =word (without a space) is left to Perl, including POD syntax.
+  Definition tags s/a/ar/h/hr are lowercase, after E = .
   Names have letters, digits, underscores; no sigil, namespace, or prototype.
   Data definitions with no values make empty containers. A function needs a body.
   Commas separate values; => separates each hash key/value. Trailing comma OK.
@@ -764,18 +851,23 @@ IMMEDIATE DEFINITIONS AND LIST SHORTHAND
   'quoted text', "interpolated text", $scalar, [nested, lists], and
   {nested => hashes} work. Quote spaces, punctuation, empty text, and leading
   zeroes: "two words", "red-blue", "", "042". No spelling correction occurs.
+  Native quotes q{a,b}, qq{hi $name}, qw(one two), qr/pattern/, substitutions,
+  and command quotes also work as values, using Perl's normal semantics.
+  Quote operators win over word quoting: write "q", "s" for those literal words
+  next to delimiters. Other Perl expressions can go in parentheses.
   Parenthesize Perl expressions: (1 + 2), (1..3), ($ENV{HOME}), (\%ENV).
   They use list context in arrays, scalar context for each hash key/value.
   Nothing is executed merely to decide how to interpret input.
 
-  Bare destination lists need a top-level comma or => and AUTO off. Perl keywords
-  and existing functions take priority; E a colors red resolves a name collision.
+  Marked destination lists need a top-level comma or => and AUTO off.
+  Without the marker, normal Perl calls and quoting are never shorthand.
   During AUTO, use explicit E forms; they execute without storing or ending AUTO.
   Values/functions persist between entries. LIST/SAVE do not include them.
   Open quotes/containers continue; Ctrl-N also inserts a line before submission.
-  Functions contain ordinary Perl; redefinition gives the usual warning.
-  E s reserves the spaced form for definitions. EVAL always means literal Perl,
-  including EVAL s /old/new/ and definitions with prototypes or attributes.
+  Replacing an existing shorthand destination asks first. Forced examples:
+  E! = s triple return 4 * shift; E! = a colors green; = colors! green, blue.
+  Functions contain ordinary Perl; approved redefinition still warns normally.
+  E and EVAL accept literal Perl, including prototypes and attributes.
   Ambiguous shorthand is rejected with an explanation. Perl expressions and
   function bodies retain Perl errors, warnings, and any side effects performed.
 
@@ -840,7 +932,8 @@ LISTING, EDITING, AND RECOVERY
                         No output in a pipe or on a dumb terminal.
   RECOVER               Restore the saved pre-shrink screen, only if it fits.
                         Replaces current screen text; never runs code or
-                        changes stored source. Screen mode only. No ! suffix.
+                        changes stored source. Screen mode only. RECOVER has
+                        no ! suffix; shortcut R3! bypasses confirmation.
   NEW / CLEAR           Clear source and its filename; retain Perl variables.
   RESET                 Fresh Perl workspace; retain source and live %ENV.
   STATUS                Line count, save status, filename, and AUTO next/step.
@@ -858,7 +951,8 @@ FILES
                         Initialize any needed variables in the source itself.
   LOAD!, IMPORT!, NEW!, CLEAR!, QUIT!, EXIT!
                         Explicitly discard unsaved source. No other command
-                        accepts this ! suffix. SAVE/EXPORT replace their file.
+                        accepts this ! suffix in its full name. For shortcuts,
+                        see CONFIRMATION above. SAVE/EXPORT replace their file.
 
 ENVIRONMENT
   ENV [name]            Display %ENV or one variable as sorted VAR=value lines.
@@ -947,8 +1041,21 @@ sub dispatch {
     return 1 if $line =~ /\A\s*\z/;
     my $definition = App::AnteREPL::Shorthand->explicit($line);
     if (defined $definition) {
-        $self->evaluate($definition, 0);
+        $self->_evaluate_definition($definition);
         return 1;
+    }
+    local $self->{shortcut_guard};
+    if ($line =~ /\A\s*([A-Z][0-9]*)(!?)(?=\s|\z)/ && exists $short_commands{$1}) {
+        my ($short, $force) = ($1, $2);
+        if ($guarded_shortcuts{$short}) {
+            $self->{shortcut_guard} = {label=>$short, force=>$force};
+            # The shortcut layer owns confirmation and force. Do not give the
+            # long-command parser a new force spelling of its own.
+            $line =~ s/\A(\s*\Q$short\E)!/$1/ if $force;
+        }
+        elsif ($force) {
+            die "The ! suffix is supported only by destructive shortcuts and E! definitions.\n";
+        }
     }
     $line = _expand_short_command($line);
     if ($line =~ /\A\s*LIST(?=[0-9-])(.*?)\s*\z/) {
@@ -1046,17 +1153,18 @@ sub dispatch {
                 else { print help(); }
             }
             elsif ($command eq 'QUIT' || $command eq 'EXIT') {
+                $self->_confirm_destructive('Exit the REPL and discard its live workspace and any unsaved source');
                 $self->_guard('QUIT', $force);
                 return 0;
             }
         }
         return 1;
     }
-    my $implicit = App::AnteREPL::Shorthand->implicit($line, sub { $self->_has_function($_[0]) });
+    my $implicit = App::AnteREPL::Shorthand->implicit($line);
     if (defined $implicit) {
-        die "List shorthand is immediate input. Try E a name values or E h name pairs during AUTO, or A0 first.\n"
+        die "List shorthand is immediate input. Try E = a name values or E = h name pairs during AUTO, or A0 first.\n"
             if $self->{auto};
-        $self->evaluate($implicit, 0);
+        $self->_evaluate_definition($implicit);
     }
     elsif ($self->{auto}) { $self->auto_store($line); }
     else {
@@ -1093,6 +1201,7 @@ sub main {
     my $self = __PACKAGE__->new;
     $self->load($filename, 1) if defined $filename;
     my $interactive = -t STDIN && -t STDOUT;
+    $self->{interactive} = $interactive;
     if ($interactive && !$plain && ($ENV{TERM} || '') ne 'dumb') {
         my $screen = eval { App::AnteREPL::Screen->terminal };
         if ($screen) { return $screen->session($self, $quiet); }
@@ -1303,10 +1412,11 @@ sub resize {
 }
 
 sub recover_display {
-    my ($self) = @_;
+    my ($self, $repl) = @_;
     my $bank = $self->{resize_bank} or die "No saved screen. RECOVER follows a terminal shrink.\n";
     die "Enlarge the terminal to at least $bank->{width}x$bank->{height}, then RECOVER.\n"
         if $self->{width} < $bank->{width} || $self->{height} < $bank->{height};
+    $repl->_confirm_destructive('Replace the visible screen with its saved resize recovery copy') if $repl;
     $self->{rows} = [map { +{%$_} } @{ $bank->{rows} }];
     @{$self}{qw(row col top left)} = ($bank->{row}, $bank->{col}, 0, 0);
     delete @{$self}{qw(resize_bank output_row output_owner last_frame)};
@@ -1720,7 +1830,7 @@ sub read_entry {
 }
 
 sub read_data {
-    my ($self) = @_;
+    my ($self, $confirmation) = @_;
     my $row = defined $self->{output_row} ? $self->{output_row} : $#{ $self->{rows} };
     $self->{row} = $row;
     my $start = length $self->{rows}[$row]{text};
@@ -1743,6 +1853,7 @@ sub read_data {
             return "$value\n";
         }
         return undef if !ref($key) && ($key eq 'EOF' || $key eq 'ENDINPUT');
+        return undef if $confirmation && !ref($key) && $key eq 'ESC';
         die "Interrupted.\n" if !ref($key) && $key eq 'CANCEL';
         if (ref $key) { $key->[1] =~ s/\n/ /g; $self->edit_key($key); }
         elsif ($key eq 'LEFT' || $key eq 'BACKSPACE') {
@@ -1804,6 +1915,7 @@ sub shell {
 
 sub session {
     my ($self, $repl, $quiet) = @_;
+    local $repl->{interactive} = 1;
     $repl->{screen} = $self;
     local $self->{repl} = $repl;
     $self->enter;
@@ -1949,8 +2061,9 @@ C<ENV SET name value> sets a variable.
 
 Immediate definitions and implicit destination lists have the explicit grammar
 under L</SHORTCUTS AND SHORTHAND>. Ordinary Perl remains unchanged in numbered
-source, LOAD, IMPORT, EDIT, and literal EVAL. The lowercase definition tags after
-C<E> are intentionally distinct from uppercase REPL commands.
+source, LOAD, IMPORT, EDIT, and unmarked immediate expressions. Shorthand needs
+an equals sign followed by whitespace; the lowercase definition tags follow
+C<E = > and are distinct from uppercase REPL commands.
 
 =head1 SHORTCUTS AND SHORTHAND
 
@@ -1976,31 +2089,63 @@ Full names remain available, and arguments keep the same meaning:
 C<V> groups environment-variable operations. C<L2 5-20> means
 C<LIST 5-20 SLOW>; C<L3 5-20> means C<LIST 5-20 PAUSE>. Separate arguments with
 spaces: C<L1 file.pl> loads, while C<L 1> lists line 1. There is no prefix
-guessing. Only C<L1!>, C<I!>, C<N!>, and C<Q!> bypass unsaved-source guards.
-Existing long aliases share the same shortcut and behavior.
+guessing. Full command names retain their existing behavior.
+
+=head2 Confirmation and force
+
+Destructive shortcuts ask C<Continue? [y/N]> before discarding or replacing
+state. Only C<y> or C<yes> approves. Enter, No, Ctrl-D, and Esc in screen mode
+cancel; Ctrl-C interrupts. Append C<!> to skip the question:
+
+    D1! 10-30
+    R2!
+    S! demo.pl
+    Q!
+
+The supported force forms are C<C!>, C<D1!>, C<E1!>, C<E2!>, C<I!>, C<L1!>,
+C<N!>, C<Q!>, C<R1!>, C<R2!>, C<R3!>, C<S!>, C<U!>, C<V!>, and C<V0!>
+through C<V6!>. They protect source replacement/deletion, the live workspace,
+screen clearing/recovery, file overwrites, and environment changes. New files
+and new values do not ask. Q always asks, even when source is saved, because
+exiting also discards the live workspace. Editors prepare their results before
+asking to apply replacements. Invalid input and unchanged values do not ask.
+
+Marked function/container redefinitions also ask. C<E! = s triple return 4 *
+shift>, C<E! = a colors green>, and C<= colors! green, blue> bypass their
+questions. New definitions need no confirmation. Declining leaves existing
+data intact and does not evaluate a replacement's expressions. Approved
+function redefinition retains Perl's usual warning.
+
+Piped input cannot confirm and fails with a hint to append C<!>; it never reads
+the next program line as an answer. Full-length commands retain their previous
+semantics. Arbitrary code evaluated by E/EVAL or RUN, and shell commands, has
+normal side effects; the REPL does not infer whether that code is destructive.
 
 =head2 Explicit immediate definitions
 
-C<E> accepts five lowercase definition tags before its ordinary EVAL behavior:
+C<E = > accepts five lowercase definition tags. The whitespace after the equals
+sign is required, keeping Perl's C<=word> POD syntax available:
 
-    E s triple return 3 * shift
+    E = s triple return 3 * shift
     say triple 14
     42
-    E a colors red, blue
-    E ar names Ada, "Grace Hopper"
-    E h options color => blue, count => 3
-    E hr record name => Ada, tags => [one, two]
+    E = a colors red, blue
+    E = ar names Ada, "Grace Hopper"
+    E = h options color => blue, count => 3
+    E = hr record name => Ada, tags => [one, two]
 
 These define a function, C<@colors>, C<$names> as an array reference,
 C<%options>, and C<$record> as a hash reference, respectively. Names are plain
 ASCII identifiers without sigils or namespaces. Omit the values to make an
-empty container, for example C<E ar names>. A function must have a body.
+empty container, for example C<E = ar names>. A function must have a body.
 
 Functions contain ordinary Perl, may recurse, and retain normal redefinition
 warnings. Open braces support multiline bodies. Prototypes, attributes, package
 names, and other advanced declarations belong in literal C<EVAL sub ...>.
-C<E s ...> reserves the spaced spelling for shorthand; C<EVAL s /old/new/>
-always runs a literal Perl substitution. C<E s/old/new/> also remains Perl.
+Unmarked C<E s /old/new/> is a literal Perl substitution, as is
+C<E s triple return 3 * shift>: Perl permits C<t> as the delimiter there.
+The marker removes this ambiguity. No switch or alternate command is needed
+to return to real Perl. EVAL always takes literal Perl.
 
 Definitions are immediate and persist in the workspace between evaluations.
 They do not enter LIST or SAVE, including during AUTO; AUTO remains active.
@@ -2008,21 +2153,21 @@ These are package variables, rather than lexicals limited to one evaluation.
 
 =head2 Named lists with implicit quoting
 
-With AUTO off, an unrecognized lowercase-leading name followed by a top-level
-comma-separated list names an array. An arrow selects a hash:
+With AUTO off, C<= > followed by a lowercase-leading destination name and a
+top-level comma-separated list names an array. An arrow selects a hash:
 
-    a one, two, threee
+    = a one, two, threee
     D \@a
-    settings color => blue, count => 3
+    = settings color => blue, count => 3
     D \%settings
 
 The first entry assigns C<@a = ('one', 'two', 'threee')>. Spelling is preserved.
-A Perl keyword or an existing workspace function always takes priority. If a
-function named C<a> exists, C<a ...> calls it; C<E a a one, two> explicitly
-assigns the array. At least one top-level comma or arrow is required for the
-bare form. C<E a names Ada> handles a one-item list without ambiguity.
-During AUTO, a recognized bare list is rejected with directions to use an
-explicit C<E> definition or leave AUTO. Numbered and file source stay literal.
+Unmarked input always stays Perl, including calls to functions named C<a>,
+C<ar>, C<h>, or C<hr>. Marked definitions explicitly select a destination,
+even if a function has the same name. At least one top-level comma or arrow
+is required for the named-list form. C<E = a names Ada> handles a one-item
+list. During AUTO, a marked named list is rejected with directions to use an
+explicit C<E = > definition or leave AUTO. Numbered and file source stay literal.
 
 =head2 The value grammar
 
@@ -2047,6 +2192,12 @@ Simple signed decimal numbers, fractions, and exponents remain numbers.
 Single and double quotes have their ordinary Perl meaning, including escapes
 and interpolation. Quote spaces, punctuation, empty strings, and leading zeroes:
 C<"two words">, C<"red-blue">, C<"">, C<"042">. No spelling correction occurs.
+Native quote operators also work directly: C<q{a,b}>, C<qq{hi $name}>,
+C<qw(one two)>, C<qr/pattern/>, substitutions, transliterations, and command
+quotes. Quoted commas/arrows are never separators. Quote operators take
+precedence over implicit words; write C<"q"> or C<"s"> when those words are
+literal data next to delimiters. Lists expand in array context; each hash
+key/value still receives scalar context. Command quotes execute normally.
 
 =item *
 
@@ -2067,8 +2218,8 @@ Unquoted punctuation or multiword values are not guessed. An ambiguous entry
 gets a friendly explanation and is rejected before evaluation. Nothing is
 compiled or run to classify input. Once accepted, explicit Perl expressions
 and function bodies execute once with normal warnings/errors and side effects;
-those effects are not rolled back. Literal C<EVAL> is the escape for Perl
-outside this small grammar. Stored programs are never rewritten as shorthand.
+those effects are not rolled back. Without a shorthand marker, E and ordinary
+immediate input accept Perl directly. Stored programs are never rewritten.
 
 =head2 Function calls without parentheses
 

@@ -46,9 +46,12 @@ prototype-based calls. Ctrl-C cancels or interrupts, then explains how to
 leave with QUIT, QUIT!, or Ctrl-D.
 
 Every command also has a one-letter or letter/digit shortcut; H shows the table.
-E accepts explicit function and container definitions. Immediate destination
-lists such as C<a one, two> define persistent arrays with quoted words.
-Literal EVAL and stored source retain ordinary Perl syntax. See the module's
+Destructive shortcuts ask C<Continue? [y/N]>; append C<!> to bypass confirmation.
+E accepts marked definitions such as C<E = s triple return 3 * shift>.
+Marked lists such as C<= a one, two> define persistent arrays with quoted words.
+The equals sign must be followed by whitespace. Unmarked expressions, EVAL,
+and stored source retain ordinary Perl syntax. Native quotes work inside marked
+lists too. C<E! = a colors green> forces a destination replacement. See the module's
 SHORTCUTS AND SHORTHAND section for the complete value grammar and precedence.
 
 See L<App::AnteREPL> for the full command reference and screen controls.
