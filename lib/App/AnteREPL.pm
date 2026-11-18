@@ -57,7 +57,7 @@ sub list_program {
     my ($self, $argument) = @_;
     $argument = '' unless defined $argument;
     my $mode = 'normal';
-    $mode = lc($1) if $argument =~ s/(?:\A|\s)(SLOW|PAUSE)\s*\z//i;
+    $mode = lc($1) if $argument =~ s/(?:\A|\s)(SLOW|PAUSE)\s*\z//;
     $argument =~ s/\A\s+|\s+\z//g;
     $argument =~ s/\s*-\s*/-/g;
     my ($text, $width) = $self->display_listing($argument);
@@ -418,7 +418,7 @@ sub environment {
     my ($self, $tail) = @_;
     my @args = _args($tail, 0, 3, 'ENV [name | SET name value | UNSET name | EDIT | SAVE file | LOAD file | RELOAD | RESET]');
     if (!@args) { print env_text(); return; }
-    my $command = uc shift @args;
+    my $command = shift @args;
     if ($command eq 'SET') {
         die "Usage: ENV SET name value\n" unless @args == 2;
         my ($key, $value) = @args;
@@ -470,13 +470,13 @@ sub environment {
 sub auto_mode {
     my ($self, $tail) = @_;
     my @args = _args($tail, 0, 2, 'AUTO [start [step]], AUTO OFF, or AUTO ECHO ON|OFF');
-    if (@args && uc($args[0]) eq 'ECHO') {
-        die "Usage: AUTO ECHO ON|OFF\n" unless @args == 2 && $args[1] =~ /\A(?:ON|OFF)\z/i;
-        $self->{auto_echo} = uc($args[1]) eq 'ON' ? 1 : 0;
+    if (@args && $args[0] eq 'ECHO') {
+        die "Usage: AUTO ECHO ON|OFF\n" unless @args == 2 && $args[1] =~ /\A(?:ON|OFF)\z/;
+        $self->{auto_echo} = $args[1] eq 'ON' ? 1 : 0;
         print 'AUTO echo ', ($self->{auto_echo} ? 'on' : 'off'), ".\n";
         return;
     }
-    if (@args == 1 && uc($args[0]) eq 'OFF') {
+    if (@args == 1 && $args[0] eq 'OFF') {
         delete $self->{auto};
         print "AUTO off.\n";
         return;
@@ -598,7 +598,7 @@ sub needs_more {
     my ($source) = @_;
     # Numbered lines and REPL/file/shell commands keep their own input grammar.
     return 0 if $source =~ /\A\s*(?:[0-9]+(?:[\s:]|\z)|!)/;
-    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/i;
+    return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)\b/;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
     local $@;
@@ -640,7 +640,8 @@ sub _args {
 sub help {
     return <<'HELP';
 PERL ANTE REPL V0.1 / App::AnteREPL
-Commands are case-insensitive except EVAL, which must be uppercase.
+All REPL commands and subcommands must be uppercase, including DUMP and PEEK.
+Lowercase/mixed-case input is ordinary Perl: executed, or stored during AUTO.
 Quote filenames and values containing spaces.
 
 ENTERING AND RUNNING PERL
@@ -669,8 +670,8 @@ ENTERING AND RUNNING PERL
                         Includes imports; excludes other packages and stubs.
                         Works during AUTO; does not execute or store source.
   ? expression          Evaluate in scalar context and display the result.
-  DUMP expression       Data::Dumper output: dump $FOO or dump \%ENV.
-  PEEK expression       Devel::Peek internals: peek $FOO or peek $FOO, 10.
+  DUMP expression       Data::Dumper output: DUMP $FOO or DUMP \%ENV.
+  PEEK expression       Devel::Peek internals: PEEK $FOO or PEEK $FOO, 10.
 
   Use $x = 1 or our $x for persistent values; my is local to one evaluation.
   say/print display output. RUN shares package variables with immediate input.
@@ -739,7 +740,7 @@ ENVIRONMENT
   quotes are literal; double quotes allow \n, \r, \t, \\, \", and \xHH.
   No $variable, backtick, or command expansion. Duplicate names/NUL are errors.
   Names exclude whitespace, =, #, quotes, and NUL. ENV subcommand names are
-  reserved; inspect SET with dump $ENV{SET}. EDIT ENV changes memory;
+  reserved; inspect SET with DUMP $ENV{SET}. EDIT ENV changes memory;
   ENV SAVE persists it. ENV LOAD/RELOAD replace, rather than merge, %ENV.
 
 SHELL AND EXIT
@@ -793,7 +794,7 @@ sub dispatch {
     my ($self, $line) = @_;
     $line =~ s/\r?\n\z//;
     return 1 if $line =~ /\A\s*\z/;
-    if ($line =~ /\A\s*LIST(?=[0-9-])(.*?)\s*\z/i) {
+    if ($line =~ /\A\s*LIST(?=[0-9-])(.*?)\s*\z/) {
         $self->list_program($1);
         return 1;
     }
@@ -806,8 +807,8 @@ sub dispatch {
         $self->set_line($number, _typed_source($code));
         return 1;
     }
-    if ($line =~ /\A\s*(DUMP|PEEK)\b\s*(.*)\z/is) {
-        $self->inspect_value(uc($1), $2);
+    if ($line =~ /\A\s*(DUMP|PEEK)\b\s*(.*)\z/s) {
+        $self->inspect_value($1, $2);
         return 1;
     }
     if ($line =~ /\A\s*\?\s*(.*)\z/s) {
@@ -825,8 +826,8 @@ sub dispatch {
         die "Shell command failed (status $status).\n" if $status;
         return 1;
     }
-    if ($line =~ /\A\s*((?i:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT)|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
-        my ($command, $force, $tail) = (uc($1), $2, defined $3 ? $3 : '');
+    if ($line =~ /\A\s*(AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|EVAL)(!?)(?:\s+(.*?))?\s*\z/s) {
+        my ($command, $force, $tail) = ($1, $2, defined $3 ? $3 : '');
         die "The ! suffix is only supported by LOAD, IMPORT, NEW, CLEAR, QUIT, and EXIT.\n"
             if $force && $command !~ /\A(?:LOAD|IMPORT|NEW|CLEAR|QUIT|EXIT)\z/;
         if ($command eq 'EVAL') {
@@ -835,7 +836,7 @@ sub dispatch {
         }
         elsif ($command eq 'AUTO') { $self->auto_mode($tail); }
         elsif ($command eq 'ENV') { $self->environment($tail); }
-        elsif ($command eq 'EDIT' && uc($tail) eq 'ENV') { $self->environment('EDIT'); }
+        elsif ($command eq 'EDIT' && $tail eq 'ENV') { $self->environment('EDIT'); }
         elsif ($command eq 'LIST') {
             $self->list_program($tail);
         }
@@ -1581,6 +1582,20 @@ lines in numeric order and evaluates them together, so blocks, subroutines,
 multiline strings, and heredocs work. Stored syntax/runtime errors report the
 corresponding numbered line when Perl supplies its source location.
 
+=head1 COMMAND CASE
+
+All AnteREPL commands and subcommands must be uppercase: C<LIST>, C<AUTO OFF>,
+C<AUTO ECHO ON>, C<ENV SET>, C<EDIT ENV>, C<LIST SLOW>, C<DUMP>, and C<PEEK>.
+Aliases such as C<DELETE>, C<REORDER>, C<CLEAR>, and C<EXIT> follow the same rule.
+
+Lowercase and mixed-case words are ordinary Perl, not command aliases. With
+AUTO off they are evaluated; with AUTO on they are stored as source. Perl's
+lowercase C<eval> keeps its normal behavior, and a user-defined C<list> function
+can be called normally. An undefined name can produce a normal Perl error.
+Command arguments retain their case, including filenames, environment names,
+values, and Perl source. C<ENV set> looks up the variable named C<set>;
+C<ENV SET name value> sets a variable.
+
 =head1 AUTO ENTRY
 
 AUTO lets you enter program source without typing editing numbers:
@@ -1649,7 +1664,7 @@ C<FUNCTIONS> prints defined function names in the current workspace, one per
 line in alphabetical order. It includes imported functions and aliases in that
 package, but excludes other packages, forward declarations without a body,
 and anonymous functions held only in variables. An empty workspace reports
-C<No functions defined in this workspace.> The command is case-insensitive,
+C<No functions defined in this workspace.> The command must be uppercase,
 takes no arguments, and works during AUTO without storing or executing source.
 Definitions in numbered source appear only after RUN installs them.
 
@@ -1721,7 +1736,7 @@ without expansion; single quotes are useful for Windows backslash paths.
     LITERAL='$HOME stays literal'
 
 ENV subcommand names are reserved after ENV. Inspect a variable called SET,
-for example, with C<dump $ENV{SET}>.
+for example, with C<DUMP $ENV{SET}>.
 
 =head1 LISTING PROGRAMS
 
@@ -1807,7 +1822,8 @@ them; C<say> is enabled by default. Evaluation uses scalar context. Use
 C<? expression> for Data::Dumper output; ordinary input does not automatically
 print its return value. C<EVAL code> bypasses command and line-number parsing.
 EVAL must be uppercase; lowercase C<eval> retains Perl's string/block evaluation
-and exception-catching behavior. Other commands remain case-insensitive.
+and exception-catching behavior. All REPL commands and subcommands must also
+be uppercase.
 
 RESET switches to a fresh workspace but keeps the source program. NEW/CLEAR
 clear the source but retain the workspace. RUN does not reset variables first.
@@ -1932,11 +1948,11 @@ DUMP expression is a prompt command backed by Data::Dumper::Dumper:
         bar => 1,
         names => [qw(Alice Bob)],
     };
-    dump $FOO
-    dump \%ENV
+    DUMP $FOO
+    DUMP \%ENV
 
 PEEK expression calls the core Devel::Peek::Dump directly on the expression,
-including an optional limit, e.g. C<peek $FOO> or C<peek $FOO, 10>. Its native
+including an optional limit, e.g. C<PEEK $FOO> or C<PEEK $FOO, 10>. Its native
 stderr output is captured into the editable display. These are prompt commands;
 in stored Perl use the module functions explicitly. They do not redefine Perl's
 CORE::dump keyword.

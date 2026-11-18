@@ -33,3 +33,5 @@
        stopping at the first retained row
      - renamed the banner, HELP, diagnostics, and native-file header to
        PERL ANTE REPL; LOAD still accepts legacy BASIC PERL V0.1 files
+     - require uppercase REPL commands and subcommands, including DUMP and
+       PEEK; lowercase/mixed-case input follows ordinary Perl and AUTO rules

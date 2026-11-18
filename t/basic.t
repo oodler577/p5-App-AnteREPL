@@ -241,7 +241,7 @@ is $other->source, $unicode->source, 'UTF-8 numbered source round trip';
 is capture { $other->run }, "café\n", 'Unicode source runs';
 
 is capture { $edit->dispatch('? 2 + 3') }, "5\n", '? displays expression result';
-is capture { $edit->dispatch('list 7') }, "7 say \"old\";\n", 'commands case-insensitive';
+is capture { $edit->dispatch('LIST 7') }, "7 say \"old\";\n", 'uppercase LIST command';
 is capture { $edit->dispatch('EVAL say 123;') }, "123\n", 'EVAL bypasses dispatcher';
 like fails { $edit->dispatch('QUIT') }, qr/Unsaved/, 'QUIT protects dirty buffer';
 is $edit->dispatch('QUIT!'), 0, 'QUIT! allows explicit discard';

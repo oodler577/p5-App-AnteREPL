@@ -23,7 +23,10 @@ anterepl - edit and run Perl in a scrolling BASIC-style screen
 
 =head1 DESCRIPTION
 
-Starts L<App::AnteREPL>. Type HELP for commands. LOAD reads ordinary Perl or
+Starts L<App::AnteREPL>. All REPL commands and subcommands must be uppercase,
+including C<LIST>, C<AUTO OFF>, C<DUMP>, and C<PEEK>. Lowercase/mixed-case input
+is ordinary Perl, executed immediately or stored during AUTO.
+Type HELP for commands. LOAD reads ordinary Perl or
 numbered programs; AUTO stores unnumbered input with an increment of 5.
 AUTO OFF or Ctrl-C returns to immediate mode. EDIT opens the in-memory
 program in your local editor, and EDIT ENV edits the current environment.

@@ -207,8 +207,8 @@ command('say "after-list-stop"', 'after-list-stop');
 print "PASS: LIST alignment, ranges, scrolling, pause/resume, slow, step, stop, and padded-row editing\n";
 
 send_text(join "\r", '$FOO = {', 'bar => 1,', 'names => [qw(Alice Bob)],', '};', '');
-command('dump $FOO', "          'bar' => 1,");
-command('peek $FOO->{bar}', '  IV = 1');
+command('DUMP $FOO', "          'bar' => 1,");
+command('PEEK $FOO->{bar}', '  IV = 1');
 print "PASS: multiline structures, dump, and native Devel::Peek output\n";
 
 send_text('print "Name: "; $answer = <STDIN>; chomp $answer; say "Got:$answer";' . "\r");

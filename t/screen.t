@@ -27,21 +27,21 @@ sub typing { map { ['TEXT', $_] } split //, $_[0] }
 
 my $repl = App::AnteREPL->new;
 $repl->dispatch('$FOO={bar=>1};');
-my $dump = capture { $repl->dispatch('dump $FOO') };
+my $dump = capture { $repl->dispatch('DUMP $FOO') };
 like $dump, qr/\$VAR1 = \{/, 'dump uses Data::Dumper output';
 like $dump, qr/'bar' => 1/, 'dump sees current workspace';
 {
     local %ENV = (PERL_ANTE_REPL_TEST => 'visible');
-    like capture { $repl->dispatch('dump \%ENV') }, qr/'PERL_ANTE_REPL_TEST' => 'visible'/, 'dump accepts an environment reference';
+    like capture { $repl->dispatch('DUMP \%ENV') }, qr/'PERL_ANTE_REPL_TEST' => 'visible'/, 'dump accepts an environment reference';
 }
-like capture { $repl->dispatch('DUMP [1, 2];') }, qr/1,\s+2/s, 'dump accepts expressions, optional semicolon and command case';
-my $peek = capture { $repl->dispatch('peek $FOO') };
+like capture { $repl->dispatch('DUMP [1, 2];') }, qr/1,\s+2/s, 'dump accepts expressions, optional semicolon';
+my $peek = capture { $repl->dispatch('PEEK $FOO') };
 like $peek, qr/SV = /, 'peek uses Devel::Peek';
 like $peek, qr/FLAGS = \(ROK\)/, 'peek sees a reference scalar';
 like $peek, qr/PVHV/, 'peek follows the hash reference';
 like $peek, qr/Elt "bar"/, 'peek inspects actual contents';
 like $peek, qr/REFCNT = 1/, 'peek does not add an artificial reference to the named scalar';
-like capture { $repl->dispatch('peek $FOO, 10;') }, qr/IV = 1/, 'peek accepts the optional depth/element limit';
+like capture { $repl->dispatch('PEEK $FOO, 10;') }, qr/IV = 1/, 'peek accepts the optional depth/element limit';
 my $failed = eval { $repl->dispatch('peek my $x = ;'); 1 };
 ok !$failed, 'peek syntax errors are reported';
 like capture { $repl->dispatch('say "still works"') }, qr/still works/, 'stdout restored after failed peek';
@@ -206,7 +206,7 @@ is $auto_end->feed('ENDINPUT'), undef, 'Ctrl-D outside AUTO retains normal exit 
     $s->append("old output\n" x 40);
     $s->{left} = 10;
     $s->{top} = 30;
-    is capture { $r->dispatch('cLs') }, '', 'CLS accepts mixed case without a message';
+    is capture { $r->dispatch('CLS') }, '', 'CLS clears without a message';
     is_deeply $s->{rows}, [{text=>''}], 'CLS removes retained display rows';
     is_deeply [@{$s}{qw(row col top left)}], [0, 0, 0, 0], 'CLS returns to top left';
     $s->edit_key('TOP');

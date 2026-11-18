@@ -28,7 +28,11 @@ Outside AUTO, ordinary Perl executes immediately. `EDIT` opens the stored
 program in `$EDITOR`; `EDIT ENV` edits `%ENV` using `VAR=value` lines.
 `CLS` clears the screen while keeping the stored program ("VRAM"), live Perl
 variables, and `%ENV`. Use `LIST` to display the program again.
-Uppercase `EVAL` executes immediately; lowercase `eval` is ordinary Perl.
+All REPL commands and subcommands are uppercase, including `LIST`, `AUTO OFF`,
+`ENV SET`, `DUMP`, and `PEEK`. Lowercase/mixed-case input is ordinary Perl:
+it executes with AUTO off and is stored with AUTO on. Filenames, environment
+names, values, and Perl code retain their case. `EVAL` executes immediately;
+lowercase `eval` is ordinary Perl.
 Shift+Enter (when the terminal distinguishes it) or Ctrl-N inserts a newline
 without submitting, including inside an editable multiline EVAL block.
 `EVAL sub triple { return 3 * shift; }` defines a session-only function in the
@@ -69,7 +73,7 @@ use the core POSIX backend. `anterepl --plain` disables screen editing.
 `LOAD program.pl` reads ordinary Perl; `SAVE` remembers that file and format.
 `.bperl` files preserve editing numbers. `LIST` supports ranges, slow output,
 and pause/step controls. Move up into a listed row, edit it, and press Enter to
-replace that program line. `dump` and `peek` inspect live values.
+replace that program line. `DUMP` and `PEEK` inspect live values.
 
 Source files do not save runtime variables. `my` variables last for one
 evaluation; use package variables for values shared across commands. Native
