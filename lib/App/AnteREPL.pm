@@ -229,7 +229,7 @@ sub _read_text {
 
 sub _write_text {
     my ($path, $text) = @_;
-    my $fh = File::Temp->new(TEMPLATE => '.basic-perl-XXXXXX', DIR => dirname($path), UNLINK => 1);
+    my $fh = File::Temp->new(TEMPLATE => '.anterepl-XXXXXX', DIR => dirname($path), UNLINK => 1);
     binmode $fh, ':raw' or die "Cannot set file mode: $!\n";
     print {$fh} encode('UTF-8', $text, FB_CROAK) or die "Cannot write '$path': $!\n";
     my $temporary = $fh->filename;
@@ -248,7 +248,7 @@ sub save {
     $path = $self->{filename} unless defined $path;
     die "SAVE needs a filename, for example SAVE demo.bperl.\n" unless defined $path && length $path;
     my $format = $path =~ /\.pl\z/i ? 'perl' : $path =~ /\.bperl\z/i ? 'native' : $self->{format};
-    _write_text($path, $format eq 'perl' ? $self->source : "# BASIC PERL V$PROGRAM_VERSION\n" . $self->listing);
+    _write_text($path, $format eq 'perl' ? $self->source : "# PERL ANTE REPL V$PROGRAM_VERSION\n" . $self->listing);
     $self->{filename} = File::Spec->rel2abs($path);
     $self->{format} = $format;
     $self->{saved} = $self->listing;
@@ -259,7 +259,7 @@ sub load {
     my ($self, $path, $force) = @_;
     $self->_guard('LOAD', $force);
     my $text = _read_text($path);
-    if ($text !~ /\A# BASIC PERL\b/ && $path !~ /\.bperl\z/i) {
+    if ($text !~ /\A# (?:PERL ANTE REPL|BASIC PERL)\b/ && $path !~ /\.bperl\z/i) {
         my $lines = _source_lines($text);
         $self->_replace($lines);
         $self->{filename} = File::Spec->rel2abs($path);
@@ -269,8 +269,10 @@ sub load {
     }
     my @records = split /\n/, $text, -1;
     pop @records if @records && $records[-1] eq '';
-    die "Not a BASIC PERL V$PROGRAM_VERSION file. Use a .pl filename or IMPORT for ordinary Perl source.\n"
-        unless @records && shift(@records) eq "# BASIC PERL V$PROGRAM_VERSION";
+    my $header = @records ? shift @records : '';
+    die "Not a PERL ANTE REPL V$PROGRAM_VERSION file. Use a .pl filename or IMPORT for ordinary Perl source.\n"
+        unless $header eq "# PERL ANTE REPL V$PROGRAM_VERSION"
+            || $header eq "# BASIC PERL V$PROGRAM_VERSION";
     my %lines;
     for my $record (@records) {
         die "Invalid numbered record in '$path'.\n" unless $record =~ /\A([0-9]+)[ \t](.*)\z/;
@@ -320,7 +322,7 @@ sub _edit_text {
         : $^O eq 'MSWin32' ? 'notepad' : 'vi';
     my @command = shellwords($editor);
     die "EDITOR is empty or has unmatched quotes.\n" unless @command && length $command[0];
-    my $directory = File::Temp->newdir('basic-perl-XXXXXX', TMPDIR => 1, CLEANUP => 1);
+    my $directory = File::Temp->newdir('anterepl-XXXXXX', TMPDIR => 1, CLEANUP => 1);
     my $path = File::Spec->catfile("$directory", $name);
     _write_text($path, $before);
     # List-form system: editor arguments are supported; no command shell is involved.
@@ -534,7 +536,7 @@ sub function_names {
 
 sub evaluate {
     my ($self, $code, $stored) = @_;
-    my $label = $stored ? 'BASIC_PERL_program' : 'BASIC_PERL_prompt';
+    my $label = $stored ? 'PERL_ANTE_REPL_program' : 'PERL_ANTE_REPL_prompt';
     my $source = "package $self->{workspace};\n#line 1 \"$label\"\n" . $code . "\n";
     my ($value, $error);
     {
@@ -544,7 +546,7 @@ sub evaluate {
     if (length $error) {
         if ($stored) {
             my @numbers = $self->numbers;
-            $error =~ s{at BASIC_PERL_program line ([0-9]+)}{
+            $error =~ s{at PERL_ANTE_REPL_program line ([0-9]+)}{
                 $1 >= 1 && $1 <= @numbers
                     ? 'at stored line ' . $numbers[$1 - 1] . " (source line $1)"
                     : "at program source line $1"
@@ -637,7 +639,7 @@ sub _args {
 
 sub help {
     return <<'HELP';
-BASIC PERL V0.1 / App::AnteREPL
+PERL ANTE REPL V0.1 / App::AnteREPL
 Commands are case-insensitive except EVAL, which must be uppercase.
 Quote filenames and values containing spaces.
 
@@ -705,9 +707,10 @@ LISTING, EDITING, AND RECOVERY
   STATUS                Line count, save status, filename, and AUTO next/step.
 
 FILES
-  LOAD file             Read ordinary Perl or numbered BASIC PERL source.
+  LOAD file             Read ordinary Perl or numbered PERL ANTE REPL source.
                         Plain source gets numbers 10,20,... . No execution.
-                        .bperl files require a valid native BASIC PERL header.
+                        .bperl files require a valid native header. Legacy
+                        BASIC PERL V0.1 headers remain supported.
   IMPORT file           Read plain Perl as an unsaved copy; no save filename.
   SAVE [file]           Save; reuse last SAVE/LOAD filename and format.
                         .pl writes plain source; .bperl writes numbered source.
@@ -900,7 +903,7 @@ sub main {
             print "Usage: anterepl [--quiet] [--plain] [program.pl|program.bperl]\n\n", help();
             return 0;
         }
-        elsif ($arg eq '--version') { print "App::AnteREPL $VERSION (BASIC PERL V$PROGRAM_VERSION)\n"; return 0; }
+        elsif ($arg eq '--version') { print "App::AnteREPL $VERSION (PERL ANTE REPL V$PROGRAM_VERSION)\n"; return 0; }
         elsif ($arg eq '--quiet') { $quiet = 1; }
         elsif ($arg eq '--plain' || $arg eq '--no-readline') { $plain = 1; }
         elsif ($arg eq '--') {
@@ -923,7 +926,7 @@ sub main {
         print STDERR "Screen editing unavailable: $@";
         print STDERR "Using plain input without a prompt.\n";
     }
-    print "*** BASIC PERL V$PROGRAM_VERSION ***\nType HELP for commands.\n" unless $quiet;
+    print "*** PERL ANTE REPL V$PROGRAM_VERSION ***\nType HELP for commands.\n" unless $quiet;
     my $had_error = 0;
     while (1) {
         my ($line, $read_ok);
@@ -1428,7 +1431,7 @@ sub external {
         open STDOUT, '>&', $self->{out} or die $!;
         open STDERR, '>&', $self->{err} or die $!;
         $status = $code->();
-        if ($pause) { print STDOUT "\nPress Enter to return to BASIC PERL."; scalar <STDIN>; }
+        if ($pause) { print STDOUT "\nPress Enter to return to PERL ANTE REPL."; scalar <STDIN>; }
         1;
     };
     my $error = $@;
@@ -1476,7 +1479,7 @@ sub session {
         tie *STDOUT, 'App::AnteREPL::ScreenOutput', $self;
         tie *STDERR, 'App::AnteREPL::ScreenOutput', $self;
         tie *STDIN, 'App::AnteREPL::ScreenInput', $self;
-        print "*** BASIC PERL V$App::AnteREPL::PROGRAM_VERSION ***\nType HELP for commands.\n" unless $quiet;
+        print "*** PERL ANTE REPL V$App::AnteREPL::PROGRAM_VERSION ***\nType HELP for commands.\n" unless $quiet;
         while (1) {
             my $line;
             my $read_ok;
@@ -1565,7 +1568,7 @@ App::AnteREPL - BASIC-style program editing with real Perl execution
 =head1 DESCRIPTION
 
 App::AnteREPL installs the C<anterepl> executable, with the banner
-C<*** BASIC PERL V0.1 ***>. It combines
+C<*** PERL ANTE REPL V0.1 ***>. It combines
 immediate Perl execution with an in-memory program indexed by line numbers.
 It requires Perl 5.16 or newer. Type HELP for the command reference.
 
@@ -1841,9 +1844,9 @@ the stored definition, and C<EVAL say twice(21)> to call it during AUTO.
 =head1 FILES AND RECOVERY
 
 LOAD accepts ordinary Perl source as well as UTF-8 numbered files bearing a
-BASIC PERL header. Plain source receives numbers 10,20,..., preserving comments,
+PERL ANTE REPL header. Plain source receives numbers 10,20,..., preserving comments,
 blank lines, and indentation. It is never executed during loading. A C<.bperl>
-filename must have a valid native header; files starting with a BASIC PERL
+filename must have a valid native header; files starting with a PERL ANTE REPL
 header are validated as native regardless of extension.
 
 SAVE remembers the loaded filename and format. C<SAVE file.pl> writes plain
@@ -1851,7 +1854,8 @@ source without editing numbers; C<SAVE file.bperl> writes numbered source.
 Other extensions retain the current format (native for a new program).
 Plain source normalizes line endings to LF and ends every stored line with a
 newline. C<IMPORT file> remains available to bring in plain source as an unsaved
-copy without adopting its filename. Old V0.1 numbered files remain compatible.
+copy without adopting its filename. Old C<# BASIC PERL V0.1> headers remain
+compatible; native-format saves write C<# PERL ANTE REPL V0.1>.
 
 EXPORT writes an ordinary Perl script with a small prelude enabling the same
 default pragmas. Workspace values are never serialized. Exported programs must

@@ -166,7 +166,7 @@ sub pump_for {
     while (!$eof && now() < $deadline) { read_available(0.02); }
 }
 
-wait_for(sub { has_line('*** BASIC PERL V0.1 ***') }, 'startup');
+wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'startup');
 command('10 say "old"', '10 say "old"');
 command('LIST', '10 say "old";');
 send_text("\e[A\e[H\x15" . '10 say "new"' . "\r");
@@ -175,7 +175,7 @@ print "PASS: move up into LIST output, edit, resubmit, and RUN\n";
 
 my $program = File::Spec->catfile($temporary, 'long.bperl');
 open my $file, '>:encoding(UTF-8)', $program or die "$program: $!\n";
-print {$file} "# BASIC PERL V0.1\n5 say \"low\";\n10 say \"second\";\n",
+print {$file} "# PERL ANTE REPL V0.1\n5 say \"low\";\n10 say \"second\";\n",
     map { "$_ say $_;\n" } grep { $_ % 10 == 0 } 20 .. 400;
 close $file or die $!;
 command(qq{LOAD! "$program"}, 'Loaded 41 lines.');
@@ -347,7 +347,7 @@ check($function_source eq '', 'session-only function leaked into SAVE');
 print "PASS: typed EVAL function closes with Enter and stays callable without entering VRAM or SAVE\n";
 command('FUNCTIONS', 'triple');
 check(has_line('twice'), 'FUNCTIONS omitted an earlier RUN-defined function');
-command('EVAL sub triple { return 4 * shift; }', 'Subroutine triple redefined at BASIC_PERL_prompt line 1.');
+command('EVAL sub triple { return 4 * shift; }', 'Subroutine triple redefined at PERL_ANTE_REPL_prompt line 1.');
 command('say triple(14)', '56');
 print "PASS: FUNCTIONS lists live names and redefinition warns without confirmation\n";
 command('RESET', 'Perl workspace reset; program retained.');

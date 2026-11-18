@@ -23,7 +23,7 @@ platform-dependent installer correctly. Its explicit `GatherFile` list ships
 the module, executable, tests, Makefile.PL, README, Changes, LICENSE,
 and dist.ini. Dist::Zilla generates MANIFEST and CPAN metadata. Keep that list
 current when adding tests or runtime files. Bump both the module's `$VERSION`
-and `version` in dist.ini for a release; the BASIC PERL banner/file-format
+and `version` in dist.ini for a release; the PERL ANTE REPL banner/file-format
 version is independent. `dzil release` tests and asks for confirmation before
 uploading with the maintainer's PAUSE credentials.
 

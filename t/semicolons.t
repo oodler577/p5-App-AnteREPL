@@ -122,11 +122,11 @@ $literal->load($saved);
 is $literal->source, "say \"one\"\n", 'LOAD does not rewrite old programs';
 
 {
-    local $ENV{BASIC_PERL_SEMI_EXECUTED};
-    delete $ENV{BASIC_PERL_SEMI_EXECUTED};
+    local $ENV{PERL_ANTE_REPL_SEMI_EXECUTED};
+    delete $ENV{PERL_ANTE_REPL_SEMI_EXECUTED};
     my $safe = App::AnteREPL->new;
-    $safe->dispatch('10 BEGIN { $ENV{BASIC_PERL_SEMI_EXECUTED} = 1 }');
-    ok !exists $ENV{BASIC_PERL_SEMI_EXECUTED}, 'normalization never executes BEGIN blocks';
+    $safe->dispatch('10 BEGIN { $ENV{PERL_ANTE_REPL_SEMI_EXECUTED} = 1 }');
+    ok !exists $ENV{PERL_ANTE_REPL_SEMI_EXECUTED}, 'normalization never executes BEGIN blocks';
 }
 
 my $err = gensym;

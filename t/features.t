@@ -40,17 +40,35 @@ $repl->set_line(20, 'say 10;');
 $repl->save;
 is App::AnteREPL::_read_text("$dir/extensionless"), "say 9;\nsay 10;\n", 'extensionless source retains its format';
 $repl->save("$dir/numbered.bperl");
-like App::AnteREPL::_read_text("$dir/numbered.bperl"), qr/\A# BASIC PERL V0.1\n10 say 9;/, 'SAVE .bperl selects numbered format';
+like App::AnteREPL::_read_text("$dir/numbered.bperl"), qr/\A# PERL ANTE REPL V0.1\n10 say 9;/, 'SAVE .bperl selects numbered format';
 $repl->load("$dir/numbered.bperl");
 is_deeply [$repl->numbers], [10,20], 'LOAD retains native numbering';
 $repl->set_line(99, 'say 99;');
 like fails { $repl->load($path) }, qr/LOAD!/, 'plain LOAD protects unsaved program';
 $repl->load($path, 1);
 is $repl->source, $source . "# appended\n", 'forced plain LOAD replaces program';
-put("$dir/bad.pl", "# BASIC PERL V0.1\n10 bad\n10 duplicate\n");
+put("$dir/bad.pl", "# PERL ANTE REPL V0.1\n10 bad\n10 duplicate\n");
 my $before = $repl->source;
 like fails { $repl->load("$dir/bad.pl") }, qr/Duplicate/, 'native header takes priority over extension';
 is $repl->source, $before, 'malformed native input leaves program unchanged';
+
+for my $name ('PERL ANTE REPL', 'BASIC PERL') {
+    my $native = App::AnteREPL->new;
+    my $file = "$dir/$name.pl";
+    put($file, "# $name V0.1\n5 say 5;\n90 say 90;\n");
+    is $native->load($file), 2, "$name header identifies numbered source even in .pl";
+    is_deeply [$native->numbers], [5, 90], "$name header preserves editing numbers";
+    $native->save("$dir/$name.bperl");
+    is App::AnteREPL::_read_text("$dir/$name.bperl"),
+        "# PERL ANTE REPL V0.1\n5 say 5;\n90 say 90;\n",
+        "$name source saves with the current header";
+    put($file, "# $name V0.1\n5 say 5;\n5 say 90;\n");
+    like fails { $native->load($file) }, qr/Duplicate/, "$name header validates numbered records";
+    is_deeply [$native->numbers], [5, 90], "$name invalid file leaves program intact";
+    put($file, "# $name V999\n5 say 5;\n");
+    like fails { $native->load($file) }, qr/Not a PERL ANTE REPL V0\.1 file/,
+        "$name unsupported version is rejected as native";
+}
 
 my $auto = App::AnteREPL->new;
 like capture { $auto->dispatch('AUTO') }, qr/AUTO 5, step 5/, 'AUTO starts at 5';

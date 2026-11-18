@@ -117,10 +117,10 @@ is App::AnteREPL::_read_text($saved), $saved_before, 'failed write preserves ear
 is $repl->{filename}, $saved, 'failed write does not alter filename';
 
 for my $case (
-    ['duplicate', "# BASIC PERL V0.1\n10 1;\n10 2;\n", qr/Duplicate/],
-    ['malformed', "# BASIC PERL V0.1\ninvalid\n", qr/Invalid numbered/],
+    ['duplicate', "# PERL ANTE REPL V0.1\n10 1;\n10 2;\n", qr/Duplicate/],
+    ['malformed', "# PERL ANTE REPL V0.1\ninvalid\n", qr/Invalid numbered/],
     ['plain', "say 1;\n", qr/ordinary Perl source/],
-    ['zero', "# BASIC PERL V0.1\n0 1;\n", qr/Line numbers/],
+    ['zero', "# PERL ANTE REPL V0.1\n0 1;\n", qr/Line numbers/],
 ) {
     my ($name, $content, $error) = @$case;
     my $path = "$dir/$name.bperl";
@@ -167,7 +167,7 @@ elsif ($mode eq 'invalid') { print {$out} "\xff\xfe"; }
 elsif ($mode eq 'nul') { print {$out} "say 1;\0\n"; }
 elsif ($mode eq 'empty') { }
 elsif ($mode eq 'crlf') { print {$out} "say 'first';\r\n\r\nsay 'last';\r\n"; }
-elsif ($mode eq 'unfinished') { print {$out} "BEGIN { \$ENV{BASIC_PERL_TEST_BEGIN} = 1 }\nmy \$unfinished =\n"; }
+elsif ($mode eq 'unfinished') { print {$out} "BEGIN { \$ENV{PERL_ANTE_REPL_TEST_BEGIN} = 1 }\nmy \$unfinished =\n"; }
 else { die "unknown mode $mode"; }
 close $out or die $!;
 exit($mode eq 'failure' ? 17 : 0);
@@ -226,10 +226,10 @@ for my $mode ('failure', 'missing', 'invalid', 'nul') {
 }
 {
     local $ENV{EDITOR} = qq{"$^X" "$editor" unfinished};
-    local $ENV{BASIC_PERL_TEST_BEGIN};
-    delete $ENV{BASIC_PERL_TEST_BEGIN};
+    local $ENV{PERL_ANTE_REPL_TEST_BEGIN};
+    delete $ENV{PERL_ANTE_REPL_TEST_BEGIN};
     ok $edit->edit, 'unfinished Perl accepted by EDIT';
-    ok !exists $ENV{BASIC_PERL_TEST_BEGIN}, 'EDIT never executes BEGIN blocks';
+    ok !exists $ENV{PERL_ANTE_REPL_TEST_BEGIN}, 'EDIT never executes BEGIN blocks';
     $edit->undo;
 }
 

@@ -31,8 +31,8 @@ my $dump = capture { $repl->dispatch('dump $FOO') };
 like $dump, qr/\$VAR1 = \{/, 'dump uses Data::Dumper output';
 like $dump, qr/'bar' => 1/, 'dump sees current workspace';
 {
-    local %ENV = (BASIC_PERL_TEST => 'visible');
-    like capture { $repl->dispatch('dump \%ENV') }, qr/'BASIC_PERL_TEST' => 'visible'/, 'dump accepts an environment reference';
+    local %ENV = (PERL_ANTE_REPL_TEST => 'visible');
+    like capture { $repl->dispatch('dump \%ENV') }, qr/'PERL_ANTE_REPL_TEST' => 'visible'/, 'dump accepts an environment reference';
 }
 like capture { $repl->dispatch('DUMP [1, 2];') }, qr/1,\s+2/s, 'dump accepts expressions, optional semicolon and command case';
 my $peek = capture { $repl->dispatch('peek $FOO') };

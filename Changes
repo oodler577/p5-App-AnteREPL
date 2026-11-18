@@ -2,7 +2,7 @@
      - initial App::AnteREPL release, with the anterepl executable
      - added scrolling screen editing, numbered source, RUN, LIST ranges,
        slow/pause controls, undo, local EDITOR support, dump, and peek
-     - LOAD accepts ordinary Perl and numbered BASIC PERL files; SAVE
+     - LOAD accepts ordinary Perl and numbered PERL ANTE REPL files; SAVE
        preserves the loaded format and writes plain source to .pl files
      - added AUTO entry with a default increment of 5; AUTO OFF or Ctrl-C
        ends entry without losing stored lines
@@ -31,3 +31,5 @@
        preserved deliberate blank output and the following entry's text
      - made Left at the start of a screen row move to the previous row's end,
        stopping at the first retained row
+     - renamed the banner, HELP, diagnostics, and native-file header to
+       PERL ANTE REPL; LOAD still accepts legacy BASIC PERL V0.1 files

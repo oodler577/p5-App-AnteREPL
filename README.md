@@ -2,7 +2,7 @@
 
 `anterepl` combines immediate Perl execution with an in-memory, numbered
 program and an editable scrolling screen inspired by the C64 BASIC prompt.
-The startup banner is `*** BASIC PERL V0.1 ***`.
+The startup banner is `*** PERL ANTE REPL V0.1 ***`.
 
 Screen editing inserts characters by default; Insert toggles overwrite mode.
 Move up, edit an earlier entry, and press Enter to replace its result directly
