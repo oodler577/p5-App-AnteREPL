@@ -34,10 +34,10 @@ QUIT or EXIT returns to the shell on a fresh line; append C<!> to discard
 unsaved source. Q asks for confirmation and Q! skips it, also in C<--plain>.
 Interactive exits print C<Thank, we hope something good happens to you today!>.
 
-The white border encloses the whole working screen ("VRAM"); a two-row command
+The white border encloses the whole working screen ("VRAM"); a single-line command
 legend stays below it. Type a label and Enter; these are not Ctrl-key bindings.
-An 80x24 terminal gives 78x20 editable cells. The cursor requests a blinking bar
-in insert mode and a blinking block in overwrite mode. C<--plain> leaves cursor
+An 80x24 terminal gives 78x21 editable cells. The input loop blinks the cursor every half second; insert requests a bar
+and overwrite a block. C<--plain> leaves cursor
 appearance to the terminal and has no frame or legend. Shrinking crops
 rows and columns, warns, and keeps one inactive copy. Growing adds empty cells.
 Enlarge to the size in the warning and use RECOVER to restore the copy;

@@ -68,3 +68,6 @@
      - print the requested farewell on interactive exit in screen and plain modes
      - cover Q/Q! and all full exit spellings in both terminal input modes;
        document how to identify an older loaded module when aliases are missing
+     - compact the command legend to one line, giving 78x21 VRAM at 80x24
+     - blink the cursor through timed visibility changes in the input loop,
+       so blinking does not depend on the terminal honoring a style request

@@ -11,6 +11,7 @@ use Encode qw(decode);
     package BoundedScreen;
     our @ISA = ('App::AnteREPL::Screen');
     sub key { shift @{ $_[0]{keys} } || 'EOF' }
+    sub _cursor_time { exists $_[0]{clock} ? $_[0]{clock} : $_[0]->SUPER::_cursor_time }
 }
 sub screen {
     my ($w, $h) = @_;
@@ -143,45 +144,55 @@ for my $bad ('RECOVER extra', 'RECOVER!') {
 {
     my $s = BoundedScreen->new;
     $s->terminal_size(80, 24);
-    is_deeply [@{$s}{qw(width height)}], [78, 20], 'frame and legend leave 78x20 VRAM in an 80x24 terminal';
+    is_deeply [@{$s}{qw(width height)}], [78, 21], 'frame and legend leave 78x20 VRAM in an 80x24 terminal';
     $s->append("row $_\n") for 1 .. 30;
     bounded($s, 'framed scrolling');
-    is_deeply texts($s), [map("row $_", 12 .. 30), ''], 'scrolling uses only the frame interior';
+    is_deeply texts($s), [map("row $_", 11 .. 30), ''], 'scrolling uses only the frame interior';
     $s->terminal_size(60, 18);
-    is_deeply [@{$s}{qw(width height)}], [58, 14], 'resizing reserves the frame and legend again';
+    is_deeply [@{$s}{qw(width height)}], [58, 15], 'resizing reserves the frame and legend again';
     like join('', @{texts($s)}), qr/RECOVER at 80x24/, 'recovery warning gives physical terminal dimensions';
     like fails { $s->recover_display }, qr/at least 80x24/, 'recovery error gives physical dimensions';
     $s->terminal_size(80, 24);
     $s->recover_display;
-    is_deeply texts($s), [map("row $_", 12 .. 30), ''], 'framed recovery restores only VRAM rows';
+    is_deeply texts($s), [map("row $_", 11 .. 30), ''], 'framed recovery restores only VRAM rows';
     $s->clear_display;
     my $bytes = '';
     open my $out, '>:encoding(UTF-8)', \$bytes or die $!;
     $out->autoflush(1);
     $s->{out} = $out;
+    $s->{clock} = 0;
     $s->{entered} = 1;
     $s->render;
     my $frame = decode('UTF-8', $bytes);
     like $frame, qr/\e\[97;40m\x{250c} VRAM /, 'frame requests white and draws the top border';
     like $frame, qr/\e\[2;1H\e\[2K\e\[97;40m\x{2502}/, 'first VRAM row is inside the border';
-    like $frame, qr/\e\[22;1H.*\x{2514}/s, 'bottom border precedes legend';
-    like $frame, qr/\e\[23;1H.*H\e\[27m Help/s, 'first legend row has highlighted command keys';
+    like $frame, qr/\e\[23;1H.*\x{2514}/s, 'bottom border precedes legend';
+    like $frame, qr/\e\[24;1H.*H\e\[27m Help/s, 'first legend row has highlighted command keys';
     like $frame, qr/\e\[24;1H.*Q\e\[27m Quit/s, 'second legend row shows quit';
-    like $frame, qr/\e\[2;2H\e\[5 q\e\[\?25h\z/, 'cursor blinks inside the upper-left VRAM cell';
+    like $frame, qr/\e\[2;2H\e\[6 q\e\[\?25h\z/, 'cursor blinks inside the upper-left VRAM cell';
     is_deeply texts($s), [''], 'border and legend never enter editable rows';
+    my $end = length $bytes;
+    $s->{clock} = 0.6;
+    $s->render;
+    is substr($bytes, $end), "\e[?25l", 'idle blink hides cursor without repainting VRAM';
+    $end = length $bytes;
+    $s->{clock} = 1.1;
+    $s->render;
+    is substr($bytes, $end), "\e[?25h", 'idle blink shows cursor again without terminal blink support';
     $s->edit_key('INSERT');
     $s->render;
-    like $bytes, qr/\e\[1 q\e\[\?25h\z/, 'overwrite mode requests a blinking block';
+    like $bytes, qr/\e\[2 q\e\[\?25h\z/, 'overwrite mode requests a blinking block';
     $s->{entered} = 0;
     $s->terminal_size(18, 8);
     my @legend = $s->legend_lines;
+    is scalar @legend, 1, 'legend occupies exactly one row';
     ok !grep(length($_) > 18, @legend), 'narrow legend stays within terminal columns';
     like $legend[0], qr/^H Help/, 'narrow legend keeps HELP';
-    like $legend[1], qr/^Q Quit/, 'narrow legend keeps QUIT';
+    like $legend[0], qr/Q Quit/, 'narrow legend keeps QUIT';
     $s->terminal_size(2, 2);
     bounded($s, 'very small terminal');
     ok !$s->{framed}, 'very small terminal omits chrome instead of using invalid coordinates';
-    for my $sizes ([80, 4, 80, 5], [2, 24, 3, 24]) {
+    for my $sizes ([80, 3, 80, 4], [2, 24, 3, 24]) {
         my $tiny = BoundedScreen->new;
         $tiny->terminal_size(@$sizes[0,1]);
         $tiny->edit_key(['TEXT', 'x']);

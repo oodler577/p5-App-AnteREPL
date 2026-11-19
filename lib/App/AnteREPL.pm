@@ -1025,8 +1025,9 @@ SCREEN KEYS
                         Shift-Enter needs a distinct terminal key sequence;
                         use Ctrl-N if it behaves like ordinary Enter.
   Insert                Toggle insert/overwrite; default is insert.
-                        Blinking bar for insert, blinking block for overwrite
-                        when the terminal supports cursor styles.
+                        Blinking bar for insert, blinking block for overwrite.
+                        The input loop blinks it every half second; terminal
+                        cursor-shape support determines bar versus block.
   Backspace / Delete    Remove characters. Tab inserts to a 4-column tab stop.
   Home / End            Start/end of row. PageUp/PageDown traverse screen rows.
   Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: visible top row.
@@ -1036,9 +1037,9 @@ SCREEN KEYS
   Ctrl-D                End AUTO/cancel input; otherwise exit if source saved.
 
   The area inside the white border is VRAM: no off-screen rows or columns.
-  The two command legend rows are outside VRAM. Type a key label and Enter;
+  The single command legend line is outside VRAM. Type a key label and Enter;
   they are commands, not Ctrl-key bindings. H shows every command.
-  An 80x24 terminal has 78x20 editable cells. CLS retains border and legend.
+  An 80x24 terminal has 78x21 editable cells. CLS retains border and legend.
   Plain mode uses normal terminal input without this frame or cursor styling.
   Output scrolls old rows away. Long lines wrap; they do not scroll sideways.
   Shrinking crops rows/columns and warns; one inactive pre-shrink copy is kept.
@@ -1343,12 +1344,12 @@ sub dimensions {
 sub terminal_size {
     my ($self, $width, $height) = @_;
     my ($old_width, $old_height) = @{$self}{qw(terminal_width terminal_height)};
-    my $framed = $width >= 3 && $height >= 5;
+    my $framed = $width >= 3 && $height >= 4;
     @{$self}{qw(terminal_width terminal_height framed)} = ($width, $height, $framed);
     delete $self->{last_frame} if !defined $old_width || $old_width != $width || $old_height != $height;
     # Keep the reservation even when too small to draw it, so enlarging a tiny
     # terminal never reduces VRAM when the frame becomes visible again.
-    my ($inner_width, $inner_height) = ($width > 2 ? $width - 2 : 1, $height > 4 ? $height - 4 : 1);
+    my ($inner_width, $inner_height) = ($width > 2 ? $width - 2 : 1, $height > 3 ? $height - 3 : 1);
     if (!$self->{size_seen}++) {
         @{$self}{qw(width height)} = ($inner_width, $inner_height);
         $self->_fit;
@@ -1621,19 +1622,30 @@ sub render {
         }
     }
     $frame .= "\e[" . ($self->{row} + 1 + !!$framed) . ';' . ($self->{col} + 1 + !!$framed) . 'H';
-    $frame .= $self->{insert} ? "\e[5 q" : "\e[1 q";
-    $frame .= $self->{list_status} ? '' : "\e[?25h";
-    return if defined $self->{last_frame} && $self->{last_frame} eq $frame;
-    $self->{last_frame} = $frame;
-    print {$self->{out}} $frame;
+    $frame .= $self->{insert} ? "\e[6 q" : "\e[2 q";
+    my $now = $self->_cursor_time;
+    if (!defined $self->{last_frame} || $self->{last_frame} ne $frame) {
+        $self->{last_frame} = $frame;
+        $self->{cursor_epoch} = $now;
+        $self->{cursor_visible} = !$self->{list_status};
+        print {$self->{out}} $frame . ($self->{cursor_visible} ? "\e[?25h" : '');
+        return;
+    }
+    return if $self->{list_status};
+    my $visible = int(($now - $self->{cursor_epoch}) / 0.5) % 2 ? 0 : 1;
+    return if $visible == $self->{cursor_visible};
+    $self->{cursor_visible} = $visible;
+    print {$self->{out}} $visible ? "\e[?25h" : "\e[?25l";
 }
+
+sub _cursor_time { time }
 
 sub legend_lines {
     my ($self) = @_;
     my @rows;
     for my $items (
-        ['H Help', 'L List', 'R Run', 'E Eval', 'A Auto', 'E1 Edit'],
-        ['Q Quit', 'S Save', 'L1 Load', 'C Cls', 'F Funcs', 'V Env'],
+        ['H Help', 'Q Quit', 'L List', 'R Run', 'E Eval', 'A Auto',
+            'E1 Edit', 'S Save', 'L1 Load', 'C Cls', 'F Subs', 'V Env'],
     ) {
         my $text = '';
         for my $item (@$items) {
@@ -2656,8 +2668,8 @@ and default cursor style. The farewell is omitted from piped/batch output.
 =head2 The screen is a small sheet of graph paper
 
 The area inside the white border is the working "VRAM". An 80-column,
-24-row terminal has 78 columns by 20 rows of editable cells: the border uses
-two columns and two rows, and a command legend uses the bottom two rows.
+24-row terminal has 78 columns by 21 rows of editable cells: the border uses
+two columns and two rows, and a command legend uses the bottom row.
 The border and legend are outside VRAM; cursor movement, scrolling, LIST,
 CLS, and RECOVER operate on the interior. There are no extra rows above it
 or columns hiding to the right. New output at the bottom scrolls old rows away.
@@ -2667,12 +2679,14 @@ of Perl; wrapping does not insert a newline into its code.
 The legend shows common command spellings with highlighted labels. Type a
 label such as C<H>, C<L>, or C<Q> and press Enter; these are not Ctrl-key
 bindings. C<H> lists all commands. Narrow windows show fewer legend items,
-keeping Help and Quit first. Below three columns or five rows the frame and
+keeping Help and Quit first. Below three columns or four rows the frame and
 legend are omitted. Plain mode has no frame or command legend.
 
-The cursor requests a blinking bar in insert mode and a blinking block in
-overwrite mode. Terminal support and local settings determine its appearance.
-Plain mode leaves cursor appearance to the terminal.
+The input loop blinks the cursor every half second by toggling its visibility,
+without relying on the terminal's native blinking setting. Insert requests a
+bar shape; overwrite requests a block. Cursor-shape support determines whether
+the shape changes. Typing makes the cursor visible immediately. Plain mode
+leaves cursor appearance to the terminal.
 
 Think of resizing as changing the size of a sheet of graph paper:
 

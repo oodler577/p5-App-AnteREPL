@@ -34,7 +34,7 @@ BEGIN {
     sub clear {
         my ($self) = @_;
         $self->{physical_width} = $self->{width} + ($self->{framed} ? 2 : 0);
-        $self->{physical_height} = $self->{height} + ($self->{framed} ? 4 : 0);
+        $self->{physical_height} = $self->{height} + ($self->{framed} ? 3 : 0);
         $self->{cells} = [map { ' ' x $self->{physical_width} } 1 .. $self->{physical_height}];
     }
 
@@ -101,8 +101,8 @@ my $temporary = tempdir('anterepl-terminal-XXXXXX', TMPDIR=>1, CLEANUP=>1);
 sub start_repl {
     my @args = @_;
     my $terminal = IO::Pty->new or die "Cannot create PTY: $!\n";
-    # Keep a 16x80 editable fixture, plus the frame and two legend rows.
-    $terminal->slave->set_winsize(20, 82);
+    # Keep a 16x80 editable fixture, plus the frame and one legend row.
+    $terminal->slave->set_winsize(19, 82);
     my $child = fork;
     die "Cannot fork: $!\n" unless defined $child;
     if ($child) { $terminal->close_slave; return ($terminal, $child); }
@@ -204,14 +204,18 @@ sub pump_for {
 
 wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'startup');
 check($view->{cells}[0] =~ /\A\x{250c} VRAM /, 'white VRAM border missing');
-check($view->{cells}[18] =~ /H Help.*E1 Edit/, 'first command legend row missing');
-check($view->{cells}[19] =~ /Q Quit.*V Env/, 'second command legend row missing');
+check($view->{cells}[18] =~ /H Help.*Q Quit/, 'first command legend row missing');
+check($view->{cells}[18] =~ /Q Quit.*L List/, 'second command legend row missing');
 check(index($transcript, "\e[97;40m") >= 0, 'border does not request white');
-check(index($transcript, "\e[5 q") >= 0, 'insert cursor does not request blinking');
+check(index($transcript, "\e[6 q") >= 0, 'insert cursor does not request blinking');
+my $blink_start = length $transcript;
+pump_for(1.2);
+check(substr($transcript, $blink_start) =~ /\e\[\?25l\e\[\?25h/,
+    'idle cursor did not blink through visibility changes');
 send_text("\e[2~");
-wait_for(sub { index($transcript, "\e[1 q") >= 0 }, 'overwrite cursor blinks');
+wait_for(sub { index($transcript, "\e[2 q") >= 0 }, 'overwrite cursor blinks');
 send_text("\e[2~");
-print "PASS: white frame and two command legend rows surround VRAM; cursor modes blink\n";
+print "PASS: white frame and one command legend row surround VRAM; cursor modes blink\n";
 command('cls', 'REPL commands must be uppercase; try, "CLS".');
 check(has_line('*** PERL ANTE REPL V0.1 ***'), 'wrong-case cls cleared the screen');
 check(index($transcript, 'Bareword "cls"') < 0, 'command hint leaked an interpreter diagnostic');
@@ -330,7 +334,7 @@ command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
 send_text("CLS\r");
 wait_for(sub { !grep { length } $view->lines }, 'CLS clears the display');
 check($view->{row} == 0 && $view->{col} == 0, 'CLS cursor is not at top left');
-check($view->{cells}[0] =~ /VRAM/ && $view->{cells}[18] =~ /H Help/ && $view->{cells}[19] =~ /Q Quit/,
+check($view->{cells}[0] =~ /VRAM/ && $view->{cells}[18] =~ /H Help/ && $view->{cells}[18] =~ /Q Quit/,
     'CLS removed the frame or command legend');
 send_text("\e[1;5H");
 pump_for(0.1);
@@ -469,7 +473,7 @@ print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and 
 
 ($pty, $pid) = start_repl('--plain', '--quiet');
 $selector = IO::Select->new($pty);
-$view = TerminalView->new(20, 82, 1);
+$view = TerminalView->new(19, 82, 1);
 ($transcript, $eof, $reaped) = ('', 0, 0);
 send_text(join("\n", '$_ = "red"', 'EVAL s /red/blue/', 'say $_',
     'E sub ar ($) { say $_[0] }', 'EVAL ar "ordinary call"',
@@ -582,7 +586,7 @@ print "PASS: shortcuts and shorthand support implicit words, multiline container
 for my $plain (0, 1) {
     ($pty, $pid) = start_repl($plain ? '--plain' : ());
     $selector = IO::Select->new($pty);
-    $view = $plain ? TerminalView->new(20, 82, 1) : TerminalView->new(16, 80);
+    $view = $plain ? TerminalView->new(19, 82, 1) : TerminalView->new(16, 80);
     ($transcript, $eof, $reaped) = ('', 0, 0);
     wait_for(sub { index($transcript, 'Type HELP for commands.') >= 0 }, 'confirmation startup');
     my $exchange = sub {
@@ -609,7 +613,8 @@ for my $plain (0, 1) {
     pump_for(0.1);
     $exchange->('E a values (die "must not run")' . "\r", $question, 'definition asks before execution');
     $exchange->("\r", qr/Cancelled\./, 'definition cancelled');
-    $exchange->('E say join q{:}, @values' . "\r", qr/(?:\r?\n|H|K)old(?:\r?\n|\e)/, 'old value survives');
+    $exchange->('E say join q{:}, @values' . "\r",
+        $plain ? qr/\r?\nold\r?\n/ : sub { has_line('old') }, 'old value survives');
     $exchange->("Q\r", $question, 'quit asks even with live state');
     $exchange->("n\r", qr/Cancelled\./, 'quit declined');
     send_text("Q!\r");
@@ -623,7 +628,7 @@ for my $plain (0, 1) {
 for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!', 'Ctrl-D') {
     ($pty, $pid) = start_repl($plain ? '--plain' : ());
     $selector = IO::Select->new($pty);
-    $view = $plain ? TerminalView->new(20, 82, 1) : TerminalView->new(16, 80);
+    $view = $plain ? TerminalView->new(19, 82, 1) : TerminalView->new(16, 80);
     ($transcript, $eof, $reaped) = ('', 0, 0);
     wait_for(sub { index($transcript, 'Type HELP for commands.') >= 0 }, "$command startup");
     if ($command =~ /!/) {
@@ -655,7 +660,7 @@ sub resize_terminal {
     my ($height, $width) = @_;
     @{$view}{qw(height width)} = ($height, $width);
     $view->clear;
-    $pty->set_winsize($height + 4, $width + 2);
+    $pty->set_winsize($height + 3, $width + 2);
 }
 
 sub finish_repl {
@@ -673,9 +678,12 @@ while (now() < $deadline) {
     sleep(0.02) if $eof;
 }
 check($reaped, 'REPL did not exit');
-pump_for(0.05); # Drain final terminal restoration and newline before closing.
+# Drain through PTY EOF after the child exits; a fixed delay can miss the
+# farewell when the VM or terminal transport delivers its final bytes late.
+my $drain_deadline = now() + 2;
+while (!$eof && now() < $drain_deadline) { read_available(0.05); }
 my $farewells = () = $transcript =~ /Thank, we hope something good happens to you today!/g;
-check($farewells == 1, 'interactive exit must print exactly one farewell');
+check($farewells == 1, "interactive exit must print exactly one farewell (got $farewells)");
 my $settings = POSIX::Termios->new;
 $settings->getattr(fileno($pty)) or die "Cannot read terminal settings: $!\n";
 check(($settings->getlflag & ICANON) && ($settings->getlflag & ECHO), 'terminal not restored');

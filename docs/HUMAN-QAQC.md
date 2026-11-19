@@ -10,10 +10,10 @@ Enter each line separately unless instructed to paste a block. Answer confirmati
 questions separately. Use Ctrl-End to return to fresh input after editing an older
 screen row. Record the first unexpected result, exact input, and terminal dimensions.
 
-At startup, expect a white border enclosing VRAM and two command legend rows
-below it. In an 80x24 terminal the interior is 78x20. The cursor should be a
+At startup, expect a white border enclosing VRAM and a single command legend line
+below it. In an 80x24 terminal the interior is 78x21. The cursor should be a
 blinking bar; Insert changes it to a blinking block, and Insert again restores
-the bar. Appearance depends on terminal support and settings. Legend labels
+the bar. The input loop controls blinking; cursor shape depends on terminal support. Legend labels
 are commands to type and submit with Enter, not Ctrl-key bindings.
 
 ## 1. Screen editing and output replacement

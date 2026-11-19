@@ -80,11 +80,11 @@ For a hands-on test session, follow [the human QA/QC walkthrough](docs/HUMAN-QAQ
 ## A screen-sized work area
 
 The white border encloses the working "VRAM", like a sheet of graph paper.
-A two-row command legend stays below it. An 80x24 terminal gives 78x20 editable
+A single-line command legend stays below it. An 80x24 terminal gives 78x21 editable
 cells; resizing adjusts the interior. Output scrolls old rows away; long lines wrap.
 The legend shows commands to type and submit with Enter, such as H for HELP.
-The cursor requests a blinking bar for insert and blinking block for overwrite,
-subject to terminal support. CLS clears the interior and retains the frame.
+The input loop blinks the cursor every half second; insert requests a bar
+and overwrite a block, subject to terminal shape support. CLS clears the interior and retains the frame.
 `--plain` uses normal terminal input without the frame, legend, or cursor styling.
 Interactive exits print: `Thank, we hope something good happens to you today!`
 PageUp cannot reach an invisible history.
