@@ -15,6 +15,7 @@ use App::AnteREPL::Shorthand ();
 
 our $VERSION = '0.01';
 our $PROGRAM_VERSION = '0.1';
+our $FAREWELL = 'Thank, we hope something good happens to you today!';
 my $next_workspace = 0;
 my $max_line = 999_999_999;
 
@@ -1009,6 +1010,8 @@ SHELL AND EXIT
                         Plain mode prints it all without pauses.
   QUIT / EXIT           Exit on a fresh line; protect unsaved source unless !.
                         Outside AUTO, Ctrl-D also exits if source is saved.
+                        Interactive exits print:
+                        Thank, we hope something good happens to you today!
 
 SCREEN KEYS
   Arrows                Move through screen text, including LIST output.
@@ -1022,6 +1025,8 @@ SCREEN KEYS
                         Shift-Enter needs a distinct terminal key sequence;
                         use Ctrl-N if it behaves like ordinary Enter.
   Insert                Toggle insert/overwrite; default is insert.
+                        Blinking bar for insert, blinking block for overwrite
+                        when the terminal supports cursor styles.
   Backspace / Delete    Remove characters. Tab inserts to a 4-column tab stop.
   Home / End            Start/end of row. PageUp/PageDown traverse screen rows.
   Esc / Ctrl-End        Fresh blank row at bottom. Ctrl-Home: visible top row.
@@ -1030,7 +1035,11 @@ SCREEN KEYS
                         Show a reminder of QUIT, QUIT!, and Ctrl-D to leave.
   Ctrl-D                End AUTO/cancel input; otherwise exit if source saved.
 
-  The visible screen is the working "VRAM": no off-screen rows or columns.
+  The area inside the white border is VRAM: no off-screen rows or columns.
+  The two command legend rows are outside VRAM. Type a key label and Enter;
+  they are commands, not Ctrl-key bindings. H shows every command.
+  An 80x24 terminal has 78x20 editable cells. CLS retains border and legend.
+  Plain mode uses normal terminal input without this frame or cursor styling.
   Output scrolls old rows away. Long lines wrap; they do not scroll sideways.
   Shrinking crops rows/columns and warns; one inactive pre-shrink copy is kept.
   Growing adds empty cells, without warning or automatic recovery. Enlarge to
@@ -1271,8 +1280,9 @@ sub main {
         my $continue;
         my $ok = eval { $continue = $self->dispatch($line); 1 };
         if (!$ok) { print STDERR _input_error($@); $had_error = 1; next; }
-        if (!$continue) { print "\n"; last; }
+        if (!$continue) { print "\n" unless $interactive; last; }
     }
+    print "\n$FAREWELL\n" if $interactive;
     return $interactive ? 0 : $had_error;
 }
 
@@ -1326,12 +1336,24 @@ sub dimensions {
         my $size = pack('S4', 0, 0, 0, 0);
         ($height, $width) = unpack('S4', $size) if ioctl($self->{in}, $self->{winsize}, $size);
     }
+    $self->terminal_size($width || $self->{terminal_width} || 80,
+        $height || $self->{terminal_height} || 24);
+}
+
+sub terminal_size {
+    my ($self, $width, $height) = @_;
+    my ($old_width, $old_height) = @{$self}{qw(terminal_width terminal_height)};
+    my $framed = $width >= 3 && $height >= 5;
+    @{$self}{qw(terminal_width terminal_height framed)} = ($width, $height, $framed);
+    delete $self->{last_frame} if !defined $old_width || $old_width != $width || $old_height != $height;
+    # Keep the reservation even when too small to draw it, so enlarging a tiny
+    # terminal never reduces VRAM when the frame becomes visible again.
+    my ($inner_width, $inner_height) = ($width > 2 ? $width - 2 : 1, $height > 4 ? $height - 4 : 1);
     if (!$self->{size_seen}++) {
-        $self->{width} = $width if $width && $width > 0;
-        $self->{height} = $height if $height && $height > 0;
+        @{$self}{qw(width height)} = ($inner_width, $inner_height);
         $self->_fit;
     }
-    else { $self->resize($width || $self->{width}, $height || $self->{height}); }
+    else { $self->resize($inner_width, $inner_height, $old_width, $old_height); }
 }
 
 # Only these rows are active screen memory. There is no off-screen viewport.
@@ -1401,13 +1423,15 @@ sub _fit {
 }
 
 sub resize {
-    my ($self, $width, $height) = @_;
+    my ($self, $width, $height, $terminal_width, $terminal_height) = @_;
     return if $width < 1 || $height < 1;
     return if $width == $self->{width} && $height == $self->{height};
     my $shrink = $width < $self->{width} || $height < $self->{height};
     if ($shrink) {
         # Keep the first unclaimed snapshot through repeated resize events.
         $self->{resize_bank} ||= { width=>$self->{width}, height=>$self->{height},
+            terminal_width=>$terminal_width || $self->{width},
+            terminal_height=>$terminal_height || $self->{height},
             row=>$self->{row}, col=>$self->{col}, rows=>[map { +{%$_} } @{ $self->{rows} }] };
     }
     @{$self}{qw(width height top left)} = ($width, $height, 0, 0);
@@ -1428,13 +1452,13 @@ sub resize {
     delete @{$self}{qw(output_row output_owner)};
     $self->fresh(1);
     my $bank = $self->{resize_bank};
-    $self->append("# Screen clipped; RECOVER at $bank->{width}x$bank->{height}.\n");
+    $self->append("# Screen clipped; RECOVER at $bank->{terminal_width}x$bank->{terminal_height}.\n");
 }
 
 sub recover_display {
     my ($self, $repl) = @_;
     my $bank = $self->{resize_bank} or die "No saved screen. RECOVER follows a terminal shrink.\n";
-    die "Enlarge the terminal to at least $bank->{width}x$bank->{height}, then RECOVER.\n"
+    die "Enlarge the terminal to at least $bank->{terminal_width}x$bank->{terminal_height}, then RECOVER.\n"
         if $self->{width} < $bank->{width} || $self->{height} < $bank->{height};
     $repl->_confirm_destructive('Replace the visible screen with its saved resize recovery copy') if $repl;
     $self->{rows} = [map { +{%$_} } @{ $bank->{rows} }];
@@ -1566,21 +1590,61 @@ sub render {
     $self->_fit;
     return unless $self->{entered};
     my ($h, $w) = ($self->{height}, $self->{width});
-    my $frame = "\e[?25l\e[H";
+    my $framed = $self->{framed};
+    my $edge = "\e[97;40m";
+    my $normal = "\e[0m";
+    my $frame = "\e[?25l\e[H$normal";
+    $frame .= "\e[2J" if !$framed && $self->{terminal_width};
+    if ($framed) {
+        my $top = "\x{2500}" x $w;
+        substr($top, 0, 6) = ' VRAM ' if $w >= 6;
+        $frame .= "\e[2K$edge\x{250c}$top\x{2510}$normal";
+    }
     for my $offset (0 .. $h - 1) {
         my $row = $self->{rows}[$offset];
         my $text = $row ? $row->{text} : '';
         $text = $self->{list_status} if $self->{list_status}
             && $offset == $self->{row} && $text eq '';
         $text = substr($text, 0, $w);
-        $frame .= "\e[" . ($offset + 1) . ";1H\e[2K" . $text;
+        $frame .= "\e[" . ($offset + 1 + !!$framed) . ";1H\e[2K";
+        $frame .= $framed
+            ? "$edge\x{2502}$normal" . $text . (' ' x ($w - length $text)) . "$edge\x{2502}$normal"
+            : $text;
     }
-    $frame .= "\e[" . ($self->{row} + 1) . ';' . ($self->{col} + 1) . 'H';
-    $frame .= $self->{insert} ? "\e[6 q" : "\e[2 q";
+    if ($framed) {
+        $frame .= "\e[" . ($h + 2) . ";1H\e[2K$edge\x{2514}" . ("\x{2500}" x $w) . "\x{2518}$normal";
+        my @legend = $self->legend_lines;
+        for my $i (0 .. $#legend) {
+            my $text = $legend[$i];
+            $text =~ s/(\A|  )([A-Z][0-9]*)(?= |\z)/$1\e[7m$2\e[27m/g;
+            $frame .= "\e[" . ($h + 3 + $i) . ";1H\e[2K$text$normal";
+        }
+    }
+    $frame .= "\e[" . ($self->{row} + 1 + !!$framed) . ';' . ($self->{col} + 1 + !!$framed) . 'H';
+    $frame .= $self->{insert} ? "\e[5 q" : "\e[1 q";
     $frame .= $self->{list_status} ? '' : "\e[?25h";
     return if defined $self->{last_frame} && $self->{last_frame} eq $frame;
     $self->{last_frame} = $frame;
     print {$self->{out}} $frame;
+}
+
+sub legend_lines {
+    my ($self) = @_;
+    my @rows;
+    for my $items (
+        ['H Help', 'L List', 'R Run', 'E Eval', 'A Auto', 'E1 Edit'],
+        ['Q Quit', 'S Save', 'L1 Load', 'C Cls', 'F Funcs', 'V Env'],
+    ) {
+        my $text = '';
+        for my $item (@$items) {
+            my $next = length $text ? "$text  $item" : $item;
+            last if length $next > $self->{terminal_width};
+            $text = $next;
+        }
+        $text = substr($items->[0], 0, 1) unless length $text;
+        push @rows, $text;
+    }
+    return @rows;
 }
 
 sub list_rows {
@@ -1984,6 +2048,7 @@ sub session {
     # Write to the restored terminal, not the screen's captured output. Keep
     # this out of leave(), which also suspends the screen for EDIT and shells.
     print {$self->{out}} "\n";
+    print {$self->{out}} "$App::AnteREPL::FAREWELL\n" if $ok;
     delete $repl->{screen};
     die $error unless $ok;
     return 0;
@@ -2581,19 +2646,33 @@ append C<!> to those commands to override. UNDO remembers the last 50 program
 changes. The save filename is not rolled back by UNDO. Editing does not save
 your source file: use SAVE afterward. No automatic crash recovery is provided.
 
-QUIT and EXIT, including their C<!> forms, print a newline on exit so the shell
-prompt starts on a fresh line. In screen mode this happens after restoring the
-original terminal display.
+Interactive exits through QUIT, EXIT, Q, their C<!> forms, or Ctrl-D print
+C<Thank, we hope something good happens to you today!> on its own line.
+In screen mode this happens after restoring the original terminal display
+and default cursor style. The farewell is omitted from piped/batch output.
 
 =head1 SCREEN EDITING AND MULTILINE INPUT
 
 =head2 The screen is a small sheet of graph paper
 
-The visible screen is the working "VRAM". If your terminal is 80 columns by
-24 rows, that is the whole active work area. There are no extra rows above it
+The area inside the white border is the working "VRAM". An 80-column,
+24-row terminal has 78 columns by 20 rows of editable cells: the border uses
+two columns and two rows, and a command legend uses the bottom two rows.
+The border and legend are outside VRAM; cursor movement, scrolling, LIST,
+CLS, and RECOVER operate on the interior. There are no extra rows above it
 or columns hiding to the right. New output at the bottom scrolls old rows away.
 Long input and output wrap at the right edge. Wrapped source remains one line
 of Perl; wrapping does not insert a newline into its code.
+
+The legend shows common command spellings with highlighted labels. Type a
+label such as C<H>, C<L>, or C<Q> and press Enter; these are not Ctrl-key
+bindings. C<H> lists all commands. Narrow windows show fewer legend items,
+keeping Help and Quit first. Below three columns or five rows the frame and
+legend are omitted. Plain mode has no frame or command legend.
+
+The cursor requests a blinking bar in insert mode and a blinking block in
+overwrite mode. Terminal support and local settings determine its appearance.
+Plain mode leaves cursor appearance to the terminal.
 
 Think of resizing as changing the size of a sheet of graph paper:
 
@@ -2603,7 +2682,8 @@ Think of resizing as changing the size of a sheet of graph paper:
 
 AnteREPL first keeps one separate copy of the screen, then crops the active
 area and prints a warning. The warning can itself scroll rows away. It tells
-you the terminal size needed for recovery. There is no confirmation question.
+you the full terminal size needed for recovery, including space for the border
+and legend. There is no confirmation question.
 
 =item * Bigger: new cells are empty.
 

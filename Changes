@@ -62,3 +62,9 @@
        input in screen and plain modes, including CLS after a definition
      - install confirmation interrupt handling before displaying the prompt,
        so an immediate Ctrl-C cannot terminate the plain-input REPL
+     - frame editable VRAM in white with two fixed command legend rows;
+       reserve their space during wrapping, scrolling, resizing, and recovery
+     - request blinking insert/overwrite cursors and restore the default on exit
+     - print the requested farewell on interactive exit in screen and plain modes
+     - cover Q/Q! and all full exit spellings in both terminal input modes;
+       document how to identify an older loaded module when aliases are missing

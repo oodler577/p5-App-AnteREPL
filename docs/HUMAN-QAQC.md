@@ -10,6 +10,12 @@ Enter each line separately unless instructed to paste a block. Answer confirmati
 questions separately. Use Ctrl-End to return to fresh input after editing an older
 screen row. Record the first unexpected result, exact input, and terminal dimensions.
 
+At startup, expect a white border enclosing VRAM and two command legend rows
+below it. In an 80x24 terminal the interior is 78x20. The cursor should be a
+blinking bar; Insert changes it to a blinking block, and Insert again restores
+the bar. Appearance depends on terminal support and settings. Legend labels
+are commands to type and submit with Enter, not Ctrl-key bindings.
+
 ## 1. Screen editing and output replacement
 
 ```text
@@ -210,9 +216,11 @@ prepared replacement leaves the live environment unchanged.
 ## 11. Screen clearing, resizing, and workspace reset
 
 C asks before clearing; decline and check the screen remains usable. C! clears
-the screen and resize bank. L still shows the program, and `say triple 14` is 42.
+the interior and resize bank; the border and legend remain. Cursor movement
+must never enter either. L still shows the program, and `say triple 14` is 42.
 
-Shrink the terminal: expect a crop warning. Enlarge it: lost text must not return
+Shrink the terminal: expect a crop warning with the full terminal dimensions
+needed for recovery. The frame and legend must still fit. Enlarge it: lost text must not return
 automatically. R3 asks before recovery; No retains the active screen. R3! restores
 the saved screen when the terminal is large enough. This never changes source
 or executes displayed text. A later C! discards the recovery copy.
@@ -223,7 +231,8 @@ resets the workspace without asking; F is empty while L retains the program.
 ## 12. Exit and plain mode
 
 Q always asks, even with saved source. No keeps the session. Q! exits without
-asking, restores the terminal, and leaves the shell on a fresh line.
+asking, restores the terminal and cursor style, and prints this exact farewell
+on its own line: `Thank, we hope something good happens to you today!`
 
 Restart with:
 
@@ -231,11 +240,16 @@ Restart with:
 perl -Ilib script/anterepl --plain
 ```
 
-Repeat a small definition, numbered line, deletion cancellation, and Q/Q!.
+There should be no frame or legend in plain mode. Enter Q: expect the
+confirmation question, not a Perl bareword error. Answer n, then Q!: expect
+the farewell and exit. Restart and repeat a small definition, numbered line,
+and deletion cancellation. Also check QUIT, QUIT!, and Ctrl-D with saved source:
+each interactive exit prints the farewell once.
 Screen movement and Esc cancellation are screen-mode checks. Enter, No, Ctrl-D,
 and Ctrl-C should still cancel destructive questions in plain mode.
 
 Piped input is covered by automated tests: it cannot confirm, never consumes the
 next command as an answer, and requires explicit `!` for destructive shortcuts.
+Batch output has no farewell.
 
 Automated baseline: 1,112 tests in 13 files; 24 terminal check groups passed.

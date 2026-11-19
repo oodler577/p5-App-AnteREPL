@@ -31,9 +31,14 @@ numbered programs; AUTO stores unnumbered input with an increment of 5.
 AUTO OFF or Ctrl-C returns to immediate mode. EDIT opens the in-memory
 program in your local editor, and EDIT ENV edits the current environment.
 QUIT or EXIT returns to the shell on a fresh line; append C<!> to discard
-unsaved source.
+unsaved source. Q asks for confirmation and Q! skips it, also in C<--plain>.
+Interactive exits print C<Thank, we hope something good happens to you today!>.
 
-The visible terminal is the whole working screen ("VRAM"). Shrinking crops
+The white border encloses the whole working screen ("VRAM"); a two-row command
+legend stays below it. Type a label and Enter; these are not Ctrl-key bindings.
+An 80x24 terminal gives 78x20 editable cells. The cursor requests a blinking bar
+in insert mode and a blinking block in overwrite mode. C<--plain> leaves cursor
+appearance to the terminal and has no frame or legend. Shrinking crops
 rows and columns, warns, and keeps one inactive copy. Growing adds empty cells.
 Enlarge to the size in the warning and use RECOVER to restore the copy;
 restoration is never automatic. CLS clears the screen and its recovery copy.

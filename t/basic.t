@@ -267,6 +267,12 @@ for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!') {
     is $err, '', "$command has no exit warning";
     is $status, 0, "$command exits successfully";
 }
+($out, $err, $status) = cli("Q!\n", '--plain');
+is $err, '', 'plain Q! is a command, not a Perl bareword';
+is $status, 0, 'plain Q! exits successfully';
+($out, $err, $status) = cli("Q\nQ!\n", '--plain');
+like $err, qr/Confirmation required: Exit the REPL/, 'batch plain Q reaches its confirmation guard';
+unlike $err, qr/Bareword|syntax error/, 'plain Q and Q! never reach the Perl parser';
 ($out, $err, $status) = cli("10 say 1;\n");
 like $err, qr/Unsaved/, 'EOF reports dirty batch';
 is $status, 1, 'dirty batch exits nonzero';

@@ -24,33 +24,48 @@ BEGIN {
 
     # Only observe the ANSI sequences used by AnteREPL; this is not a terminal.
     sub new {
-        my ($class, $height, $width) = @_;
-        my $self = bless { height=>$height, width=>$width, row=>0, col=>0, pending=>'' }, $class;
+        my ($class, $height, $width, $plain) = @_;
+        my $self = bless { height=>$height, width=>$width, row=>0, col=>0,
+            physical_row=>0, physical_col=>0, framed=>!$plain, pending=>'', octets=>'' }, $class;
         $self->clear;
         return $self;
     }
 
     sub clear {
         my ($self) = @_;
-        $self->{cells} = [map { ' ' x $self->{width} } 1 .. $self->{height}];
+        $self->{physical_width} = $self->{width} + ($self->{framed} ? 2 : 0);
+        $self->{physical_height} = $self->{height} + ($self->{framed} ? 4 : 0);
+        $self->{cells} = [map { ' ' x $self->{physical_width} } 1 .. $self->{physical_height}];
     }
 
     sub feed {
         my ($self, $data) = @_;
-        $self->{pending} .= Encode::decode('UTF-8', $data, Encode::FB_DEFAULT());
+        $self->{octets} .= $data;
+        # Keep an incomplete final UTF-8 character across reads, but replace
+        # other invalid bytes from external programs instead of stalling.
+        my $tail = '';
+        $tail = $1 if $self->{octets} =~ s/([\xc2-\xdf]|[\xe0-\xef][\x80-\xbf]?|[\xf0-\xf4][\x80-\xbf]{0,2})\z//;
+        $self->{pending} .= Encode::decode('UTF-8', $self->{octets}, Encode::FB_DEFAULT());
+        $self->{octets} = $tail;
         while (length $self->{pending}) {
             if ($self->{pending} =~ /\A\e\[/) {
                 return unless $self->{pending} =~ s/\A\e\[([0-?]*)([ -\/]*)([\@-~])//;
-                my ($params, $command) = ($1, $3);
+                my ($params, $intermediate, $command) = ($1, $2, $3);
                 my @numbers = $params =~ /\A[0-9;]*\z/ ? map { length($_) ? 0 + $_ : 0 } split(/;/, $params, -1) : ();
                 if ($command eq 'H') {
-                    $self->{row} = ($numbers[0] || 1) - 1;
-                    $self->{col} = ($numbers[1] || 1) - 1;
+                    $self->{physical_row} = ($numbers[0] || 1) - 1;
+                    $self->{physical_col} = ($numbers[1] || 1) - 1;
+                    $self->{row} = $self->{physical_row} - !!$self->{framed};
+                    $self->{col} = $self->{physical_col} - !!$self->{framed};
                 }
-                elsif ($command eq 'K' && $self->{row} >= 0 && $self->{row} < $self->{height}) {
-                    $self->{cells}[ $self->{row} ] = ' ' x $self->{width};
+                elsif ($command eq 'K' && $self->{physical_row} >= 0 && $self->{physical_row} < $self->{physical_height}) {
+                    $self->{cells}[ $self->{physical_row} ] = ' ' x $self->{physical_width};
                 }
                 elsif ($command eq 'J' && $params eq '2') { $self->clear; }
+                elsif ($command eq 'l' && $params eq '?25') { $self->{painting} = 1; }
+                elsif (($command eq 'h' && $params eq '?25') || ($command eq 'q' && $intermediate eq ' ')) {
+                    $self->{painting} = 0;
+                }
                 next;
             }
             if (substr($self->{pending}, 0, 1) eq "\e") {
@@ -59,21 +74,25 @@ BEGIN {
                 next;
             }
             my $char = substr($self->{pending}, 0, 1, '');
-            if ($char eq "\r") { $self->{col} = 0; }
-            elsif ($char eq "\n") { ++$self->{row}; }
+            if ($char eq "\r") { $self->{physical_col} = 0; }
+            elsif ($char eq "\n") { ++$self->{physical_row}; }
             elsif (ord($char) >= 32) {
-                if ($self->{row} >= 0 && $self->{row} < $self->{height}
-                    && $self->{col} >= 0 && $self->{col} < $self->{width}) {
-                    substr($self->{cells}[ $self->{row} ], $self->{col}, 1, $char);
+                if ($self->{physical_row} >= 0 && $self->{physical_row} < $self->{physical_height}
+                    && $self->{physical_col} >= 0 && $self->{physical_col} < $self->{physical_width}) {
+                    substr($self->{cells}[ $self->{physical_row} ], $self->{physical_col}, 1, $char);
                 }
-                ++$self->{col};
+                ++$self->{physical_col};
             }
+            $self->{row} = $self->{physical_row} - !!$self->{framed};
+            $self->{col} = $self->{physical_col} - !!$self->{framed};
         }
     }
 
     sub lines {
         my ($self) = @_;
-        return map { my $line = $_; $line =~ s/\s+\z//; $line } @{ $self->{cells} };
+        my $origin = !!$self->{framed};
+        return map { my $line = substr($self->{cells}[$_ + $origin], $origin, $self->{width});
+            $line =~ s/\s+\z//; $line } 0 .. $self->{height} - 1;
     }
 }
 
@@ -82,7 +101,8 @@ my $temporary = tempdir('anterepl-terminal-XXXXXX', TMPDIR=>1, CLEANUP=>1);
 sub start_repl {
     my @args = @_;
     my $terminal = IO::Pty->new or die "Cannot create PTY: $!\n";
-    $terminal->slave->set_winsize(16, 80);
+    # Keep a 16x80 editable fixture, plus the frame and two legend rows.
+    $terminal->slave->set_winsize(20, 82);
     my $child = fork;
     die "Cannot fork: $!\n" unless defined $child;
     if ($child) { $terminal->close_slave; return ($terminal, $child); }
@@ -125,7 +145,16 @@ sub at_confirmation {
     my $text = join ' ', @lines[($row ? $row - 1 : 0) .. $row];
     return $text =~ /Continue\? \[\s*y\/N\]\z/;
 }
-sub check { my ($ok, $message) = @_; die "$message (cursor $view->{row},$view->{col})\n" . screen_text() . "\n" unless $ok; }
+sub check {
+    my ($ok, $message) = @_;
+    return if $ok;
+    if ($ENV{ANTEREPL_SMOKE_TRACE}) {
+        open my $log, '>:raw', $ENV{ANTEREPL_SMOKE_TRACE} or die $!;
+        print {$log} $transcript;
+        close $log;
+    }
+    die "$message (cursor $view->{row},$view->{col})\n" . screen_text() . "\n";
+}
 
 sub read_available {
     my ($timeout) = @_;
@@ -142,11 +171,11 @@ sub wait_for {
     my ($predicate, $label, $timeout) = @_;
     my $deadline = now() + (defined $timeout ? $timeout : 6);
     while (now() < $deadline) {
-        return if $predicate->();
+        return if !$view->{painting} && $predicate->();
         last if $eof;
         read_available(0.05);
     }
-    check($predicate->(), $label);
+    check(!$view->{painting} && $predicate->(), $label);
 }
 
 sub send_text {
@@ -174,6 +203,15 @@ sub pump_for {
 }
 
 wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, 'startup');
+check($view->{cells}[0] =~ /\A\x{250c} VRAM /, 'white VRAM border missing');
+check($view->{cells}[18] =~ /H Help.*E1 Edit/, 'first command legend row missing');
+check($view->{cells}[19] =~ /Q Quit.*V Env/, 'second command legend row missing');
+check(index($transcript, "\e[97;40m") >= 0, 'border does not request white');
+check(index($transcript, "\e[5 q") >= 0, 'insert cursor does not request blinking');
+send_text("\e[2~");
+wait_for(sub { index($transcript, "\e[1 q") >= 0 }, 'overwrite cursor blinks');
+send_text("\e[2~");
+print "PASS: white frame and two command legend rows surround VRAM; cursor modes blink\n";
 command('cls', 'REPL commands must be uppercase; try, "CLS".');
 check(has_line('*** PERL ANTE REPL V0.1 ***'), 'wrong-case cls cleared the screen');
 check(index($transcript, 'Bareword "cls"') < 0, 'command hint leaked an interpreter diagnostic');
@@ -292,6 +330,8 @@ command('AUTO 25', 'AUTO 25, step 5. AUTO OFF, Ctrl-C, or Ctrl-D ends entry.');
 send_text("CLS\r");
 wait_for(sub { !grep { length } $view->lines }, 'CLS clears the display');
 check($view->{row} == 0 && $view->{col} == 0, 'CLS cursor is not at top left');
+check($view->{cells}[0] =~ /VRAM/ && $view->{cells}[18] =~ /H Help/ && $view->{cells}[19] =~ /Q Quit/,
+    'CLS removed the frame or command legend');
 send_text("\e[1;5H");
 pump_for(0.1);
 check(!grep({ length } $view->lines), 'CLS retained old screen rows');
@@ -429,7 +469,7 @@ print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and 
 
 ($pty, $pid) = start_repl('--plain', '--quiet');
 $selector = IO::Select->new($pty);
-$view = TerminalView->new(16, 80);
+$view = TerminalView->new(20, 82, 1);
 ($transcript, $eof, $reaped) = ('', 0, 0);
 send_text(join("\n", '$_ = "red"', 'EVAL s /red/blue/', 'say $_',
     'E sub ar ($) { say $_[0] }', 'EVAL ar "ordinary call"',
@@ -542,7 +582,7 @@ print "PASS: shortcuts and shorthand support implicit words, multiline container
 for my $plain (0, 1) {
     ($pty, $pid) = start_repl($plain ? '--plain' : ());
     $selector = IO::Select->new($pty);
-    $view = TerminalView->new(16, 80);
+    $view = $plain ? TerminalView->new(20, 82, 1) : TerminalView->new(16, 80);
     ($transcript, $eof, $reaped) = ('', 0, 0);
     wait_for(sub { index($transcript, 'Type HELP for commands.') >= 0 }, 'confirmation startup');
     my $exchange = sub {
@@ -579,33 +619,43 @@ for my $plain (0, 1) {
     print 'PASS: ', ($plain ? 'plain' : 'screen'), " confirmations accept yes; Enter/No/Ctrl-D/Ctrl-C cancel; force skips prompts\n";
 }
 
-for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!') {
-    ($pty, $pid) = start_repl();
+for my $plain (0, 1) {
+for my $command ('QUIT', 'QUIT!', 'EXIT', 'EXIT!', 'Q', 'Q!', 'Ctrl-D') {
+    ($pty, $pid) = start_repl($plain ? '--plain' : ());
     $selector = IO::Select->new($pty);
-    $view = TerminalView->new(16, 80);
+    $view = $plain ? TerminalView->new(20, 82, 1) : TerminalView->new(16, 80);
     ($transcript, $eof, $reaped) = ('', 0, 0);
-    wait_for(sub { has_line('*** PERL ANTE REPL V0.1 ***') }, "$command startup");
+    wait_for(sub { index($transcript, 'Type HELP for commands.') >= 0 }, "$command startup");
     if ($command =~ /!/) {
         command('10 say "unsaved"', '10 say "unsaved"');
         send_text("QUIT\r");
         wait_for(sub { has_prefix('Unsaved program.') }, 'QUIT keeps unsaved source');
     }
-    send_text("$command\r");
+    if ($command eq 'Ctrl-D') {
+        send_text('print "last-output"' . "\r");
+        wait_for(sub { index($transcript, 'last-output') >= 0 }, 'output before Ctrl-D');
+        send_text("\x04");
+    }
+    else { send_text("$command\r"); }
     if ($command eq 'Q') {
-        wait_for(sub { at_confirmation() }, 'Q confirmation');
+        wait_for(sub { $plain ? $transcript =~ /Continue\? \[y\/N\]/ : at_confirmation() }, 'Q confirmation');
         send_text("yes\r");
     }
     finish_repl();
-    check($transcript =~ /\e\[\?1049l\r?\n\z/,
-        "$command did not print a newline after restoring the original display");
+    check($transcript =~ /(?:\A|\r?\n)Thank, we hope something good happens to you today!\r?\n\z/,
+        "$command did not print the farewell on a fresh line");
+    check(index($transcript, 'Bareword') < 0 && index($transcript, 'syntax error') < 0,
+        "$command reached Perl instead of the command dispatcher");
+    check($plain || $transcript =~ /\e\[0 q.*\e\[\?1049l/s, 'exit did not restore cursor and screen');
 }
-print "PASS: full and shortcut exit commands restore the terminal and finish on a fresh line\n";
+}
+print "PASS: full and shortcut exits, including plain Q/Q!, restore the terminal and print the farewell\n";
 
 sub resize_terminal {
     my ($height, $width) = @_;
     @{$view}{qw(height width)} = ($height, $width);
     $view->clear;
-    $pty->set_winsize($height, $width);
+    $pty->set_winsize($height + 4, $width + 2);
 }
 
 sub finish_repl {
@@ -624,6 +674,8 @@ while (now() < $deadline) {
 }
 check($reaped, 'REPL did not exit');
 pump_for(0.05); # Drain final terminal restoration and newline before closing.
+my $farewells = () = $transcript =~ /Thank, we hope something good happens to you today!/g;
+check($farewells == 1, 'interactive exit must print exactly one farewell');
 my $settings = POSIX::Termios->new;
 $settings->getattr(fileno($pty)) or die "Cannot read terminal settings: $!\n";
 check(($settings->getlflag & ICANON) && ($settings->getlflag & ECHO), 'terminal not restored');
