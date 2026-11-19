@@ -61,8 +61,8 @@ sub _confirmation_answer {
     my ($self, $description, $forced) = @_;
     die "Confirmation required: $description. Try $forced to proceed without a prompt.\n"
         unless $self->{interactive};
-    print "$description. Continue? [y/N] ";
     local $SIG{INT} = sub { die "Interrupted.\n" };
+    print "$description. Continue? [y/N] ";
     my ($answer, $error);
     { local $@;
       eval { $answer = $self->{screen} ? $self->{screen}->read_data(1) : scalar <STDIN>; 1 }
@@ -758,11 +758,23 @@ sub needs_more {
     return 0 if $source =~ /\A\s*(?:AUTO|ENV|LIST|RUN|EDIT|DEL|DELETE|RENUM|REORDER|UNDO|SAVE|LOAD|IMPORT|EXPORT|NEW|CLEAR|CLS|RECOVER|RESET|FUNCTIONS|STATUS|HELP|QUIT|EXIT|CD|CHDIR)\b/;
     my @stack;
     my %close = (')' => '(', ']' => '[', '}' => '{');
+    my $trivia = qr/(?:\s|\#[^\n]*(?:\n|\z))*/;
+    my $name = qr/[\p{L}_][\p{L}\p{N}_]*(?:(?:::|')[\p{L}_][\p{L}\p{N}_]*)*/;
     local $@;
     my $position = 0;
     while ($position < length $source) {
         my $rest = substr($source, $position);
         if ($rest =~ /\A\#[^\n]*(?:\n|\z)/ || $rest =~ /\A\s+/) {
+            $position += length $&;
+            next;
+        }
+        # Prototype sigils are declarations, not variables: ($) ends with a
+        # closing parenthesis, not the special variable $). Skip only the
+        # prototype alphabet here; signatures/default expressions still use
+        # the normal scanner, and actual $) / $( variables remain untouched.
+        if ($rest =~ /\A(?:sub\b$trivia(?:$name$trivia)?|:$trivia prototype\b$trivia)
+                \([\$\@%&*+;_\\\[\]\s]*(\)|\z)/x) {
+            return 1 unless length $1;
             $position += length $&;
             next;
         }
@@ -910,6 +922,8 @@ ENTERING AND RUNNING PERL
   say/print display output. RUN shares package variables with immediate input.
   Stored subroutines become callable after RUN; LOAD/LIST do not define them.
   Open quotes, braces, brackets, or parentheses continue on the next row.
+  A closed subroutine definition, including ($) or (@), submits with Enter.
+  Ctrl-C cancels unfinished input; commands inside it are still Perl text.
   A complete multiline AUTO entry preserves literal source: supply its final ;.
   Numbered and AUTO colon entries stay literal, one physical line at a time.
   Blank input does nothing. Commands remain available during AUTO.
@@ -2304,6 +2318,13 @@ symbol table without adding its definition to the numbered program:
 Press ordinary Enter after the closing brace. The definition prints nothing;
 the next entry calls it and prints 42. EVAL also works while AUTO is active,
 but leaves AUTO on. Use C<? triple 14> for an immediate call during AUTO.
+
+Prototypes work the same way: C<E sub twice ($) { 2 * $_[0] }> completes
+with one Enter, and C<say twice 21> on the next entry prints 42. If the body
+is still open, input continues until its closing brace. While collecting an
+unfinished entry, text such as C<CLS> is part of that entry, not a command.
+Press Ctrl-C to cancel it and return to fresh input. Ctrl-D outside AUTO
+exits when the stored program has no unsaved changes.
 
 The function lives in the workspace package of this Perl process. It is
 callable by immediate input and RUN, but does not appear in LIST or SAVE.

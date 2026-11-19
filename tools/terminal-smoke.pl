@@ -367,6 +367,24 @@ command('EVAL sub triple { return 4 * shift; }', 'Subroutine triple redefined at
 command('say triple 14', '56');
 print "PASS: FUNCTIONS lists live names and redefinition warns without confirmation\n";
 command('RESET', 'Perl workspace reset; program retained.');
+command('$_ = "red"', '$_ = "red"');
+command('EVAL s /red/blue/', 'EVAL s /red/blue/');
+command('say $_', 'blue');
+command('E sub ar ($) { say $_[0] }', 'E sub ar ($) { say $_[0] }');
+command('EVAL ar "ordinary call"', 'ordinary call');
+command('say join q{:}, qw(one two)', 'one:two');
+command('E sub twice ($) { 2 * $_[0] }', 'E sub twice ($) { 2 * $_[0] }');
+command('say twice 21', '42');
+command('EVAL s/blue/green/', 'EVAL s/blue/green/');
+command('say $_', 'green');
+send_text("CLS\r");
+wait_for(sub { !grep { length } $view->lines }, 'CLS after prototype definitions');
+send_text('EVAL sub total (@) {' . "\r");
+wait_for(sub { has_line('EVAL sub total (@) {') && $view->{row} == 1 && $view->{col} == 0 },
+    'prototype declaration with open body continues');
+send_text('    return scalar @_;' . "\r}\r");
+command('say total 1, 2, 3', '3');
+print "PASS: QA step 5 completes on Enter; prototypes, substitutions, multiline bodies, and CLS work\n";
 command('EVAL sub triple { 3 * shift }', 'EVAL sub triple { 3 * shift }');
 send_text("CLS\r");
 wait_for(sub { !grep { length } $view->lines }, 'clear screen for resubmission checks');
@@ -413,6 +431,13 @@ print "PASS: Ctrl-D outside AUTO exits cleanly and restores canonical input and 
 $selector = IO::Select->new($pty);
 $view = TerminalView->new(16, 80);
 ($transcript, $eof, $reaped) = ('', 0, 0);
+send_text(join("\n", '$_ = "red"', 'EVAL s /red/blue/', 'say $_',
+    'E sub ar ($) { say $_[0] }', 'EVAL ar "ordinary call"',
+    'say join q{:}, qw(one two)', 'E sub twice ($) { 2 * $_[0] }', 'say twice 21', ''));
+for my $expected ('blue', 'ordinary call', 'one:two', '42') {
+    wait_for(sub { index($transcript, "\r\n$expected\r\n") >= 0 }, "plain QA step 5: $expected");
+}
+print "PASS: QA step 5 completes in plain terminal input\n";
 send_text("AUTO\nsay \"plain-stored\"\nSTATUS\n");
 wait_for(sub { index($transcript, 'AUTO next 10, step 5.') >= 0 }, 'plain AUTO stored input');
 send_text("\x04");

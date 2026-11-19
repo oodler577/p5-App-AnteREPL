@@ -15,6 +15,29 @@ sub capture (&) {
     return $out;
 }
 my $r = App::AnteREPL->new;
+
+# Completion must understand declaration prototypes before interpreting sigils
+# as variables. In particular, the closing ')' in ($) is not part of $).
+for my $prototype ('$', '@', '%', '$$', '&@', '\\$', '\\[$@]', '*;_', '+', '') {
+    for my $header ("sub named ($prototype)", "sub ($prototype)",
+        "sub named :prototype($prototype)") {
+        ok !$r->input_needs_more("EVAL $header { 42 }"), "complete declaration: $header";
+        ok $r->input_needs_more("EVAL $header {"), "open body: $header";
+    }
+}
+ok $r->input_needs_more('E sub pending ($'), 'unfinished prototype continues';
+ok !$r->input_needs_more("E sub pending (\$\n) { 42 }"), 'prototype can span rows';
+ok !$r->input_needs_more("E sub # declaration\n pending # name\n (\$) { 42 }"),
+    'comments between declaration tokens are ignored';
+ok !$r->input_needs_more('E sub Other::named ($) { 42 }'), 'qualified subroutine name';
+ok !$r->input_needs_more('E sub named ($) :lvalue { $value }'), 'attribute after prototype';
+for my $source ('EVAL do { say $) }', 'EVAL do { say $( }',
+    'say($))', 'say($( )', '$x = "sub named ($) {"', '$x = q|sub named ($) {|') {
+    ok !$r->input_needs_more($source), "ordinary variables and quotes remain complete: $source";
+}
+ok $r->input_needs_more('EVAL do { say $)'), 'special variable does not close an open body';
+ok $r->input_needs_more('say($)'), 'special variable does not close its enclosing call';
+
 $r->dispatch('EVAL sub triple { 3 * shift }');
 is capture { $r->dispatch('say triple 14') }, "42\n", 'ordinary subroutine call needs no parentheses';
 is capture { $r->dispatch('say triple(14)') }, "42\n", 'parenthesized calls remain supported';

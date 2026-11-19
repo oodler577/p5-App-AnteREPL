@@ -32,6 +32,21 @@ sub fails (&) { my ($code) = @_; local $@; eval { $code->(); 1 }; return $@; }
     sub TIESCALAR { bless {fetch=>0, store=>0}, shift }
     sub FETCH { ++$_[0]{fetch}; return 'old' }
     sub STORE { ++$_[0]{store} }
+    package InterruptPrompt;
+    sub TIEHANDLE { bless {}, shift }
+    sub PRINT { $SIG{INT}->(); return 1 }
+}
+{
+    my $prompt = App::AnteREPL->new;
+    $prompt->{interactive} = 1;
+    my $error;
+    {
+        local $SIG{INT} = sub { die "Unhandled prompt interrupt.\n" };
+        local *STDOUT;
+        tie *STDOUT, 'InterruptPrompt';
+        $error = fails { $prompt->_confirmation_answer('Discard source', 'N!') };
+    }
+    is $error, "Interrupted.\n", 'Ctrl-C is handled as soon as the confirmation becomes visible';
 }
 my $dir = tempdir(CLEANUP=>1);
 my $r = ConfirmRepl->new;

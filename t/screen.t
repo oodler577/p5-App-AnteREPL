@@ -86,6 +86,28 @@ my $paste = TestScreen->new;
     my $typed = TestScreen->new;
     my $r = App::AnteREPL->new;
     $typed->{repl} = $r;
+    for my $case (
+        ['$_ = "red"', ''],
+        ['EVAL s /red/blue/', ''],
+        ['say $_', "blue\n"],
+        ['E sub ar ($) { say $_[0] }', ''],
+        ['EVAL ar "ordinary call"', "ordinary call\n"],
+        ['say join q{:}, qw(one two)', "one:two\n"],
+        ['E sub twice ($) { 2 * $_[0] }', ''],
+        ['say twice 21', "42\n"],
+        ['CLS', ''],
+    ) {
+        my ($code, $expected) = @$case;
+        my $entry = $typed->feed(typing($code), 'ENTER');
+        is $entry, $code, "single Enter submits QA entry: $code";
+        next unless defined $entry;
+        is capture { $r->dispatch($entry) }, $expected, "QA entry result: $code";
+    }
+}
+{
+    my $typed = TestScreen->new;
+    my $r = App::AnteREPL->new;
+    $typed->{repl} = $r;
     my $entry = $typed->feed(typing('EVAL sub triple {'), 'ENTER',
         typing('    return 3 * shift;'), 'ENTER', typing('}'), 'ENTER');
     is $entry, "EVAL sub triple {\n    return 3 * shift;\n}",

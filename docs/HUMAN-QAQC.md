@@ -85,6 +85,13 @@ say twice 21
 
 Expect `blue`, `ordinary call`, `one:two`, and 42. EVAL evaluates literal Perl;
 E reserves the five shorthand tags. No persistent mode change is needed.
+Each line above must submit with one Enter. In particular, `($)` is a complete
+prototype: the definition is silent, and the following call runs separately.
+`EVAL s/red/blue/` also works without the space after `s`.
+
+Enter `CLS`; it must clear the display. Then `say twice 21` must still print 42.
+If an entry unexpectedly keeps collecting lines, Ctrl-C cancels it while
+keeping the REPL open. Ctrl-D outside AUTO exits when the stored program is saved.
 
 ## 6. Redefinition and cancellation
 

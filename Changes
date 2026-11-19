@@ -57,3 +57,8 @@
        question, including shorthand redefinitions and file overwrites
      - restore direct E s/E a/E ar/E h/E hr and bare named-list shorthand;
        retain EVAL for literal Perl and native quote operators in list values
+     - fix automatic completion of subroutine prototypes such as ($) and (@),
+       which swallowed later commands; test human QA step 5 through terminal
+       input in screen and plain modes, including CLS after a definition
+     - install confirmation interrupt handling before displaying the prompt,
+       so an immediate Ctrl-C cannot terminate the plain-input REPL
